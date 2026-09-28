@@ -6,6 +6,7 @@ import { ModeSwitch } from "../components/mode.tsx";
 import { OnboardDialog } from "../components/onboard.tsx";
 import { Pipeline } from "../components/pipeline.tsx";
 import { OpenWorkList, ShipButton } from "../components/ship.tsx";
+import { DeploymentsSection } from "../components/coolify.tsx";
 import { BranchName, Button, Card, Empty, Skeleton } from "../components/ui.tsx";
 import type { ApiRepo } from "../lib/api-types.ts";
 import { ApiError } from "../lib/api.ts";
@@ -84,6 +85,8 @@ export function RepoPage() {
             </div>
             <Pipeline repo={repo} status={status} loading={q.isLoading || (q.isFetching && !status)} />
           </section>
+
+          <DeploymentsSection repo={repo} />
 
           <OpenWorkList repo={repo} status={status} />
 

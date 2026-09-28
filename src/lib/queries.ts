@@ -1,6 +1,12 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "./api.ts";
 import type {
+  ApiCoolifyInstance,
+  CoolifySetupPlan,
+  CoolifySetupRequest,
+  CoolifySetupResult,
+  DeploymentDetail,
+  RepoDeploymentsResponse,
   CreateTokenResponse,
   EventsResponse,
   InstallationsResponse,
@@ -28,6 +34,9 @@ export const keys = {
   installations: ["installations"] as const,
   members: ["members"] as const,
   tokens: ["tokens"] as const,
+  coolify: ["coolify-instances"] as const,
+  deployments: (full: string) => ["deployments", full] as const,
+  deployment: (full: string, app: string, id: string) => ["deployment", full, app, id] as const,
 };
 
 export const useSetupStatus = () => useQuery({ queryKey: keys.setup, queryFn: () => api<SetupStatusResponse>("/setup/status"), staleTime: 60_000 });
@@ -156,5 +165,121 @@ export function useDeleteToken() {
   return useMutation({
     mutationFn: (id: number) => api<{ ok: true }>(`/v1/tokens/${id}`, { method: "DELETE" }),
     onSuccess: () => qc.invalidateQueries({ queryKey: keys.tokens }),
+  });
+}
+
+/* ---------------- Coolify ---------------- */
+
+export const useCoolifyInstances = () =>
+  useQuery({ queryKey: keys.coolify, queryFn: () => api<{ instances: ApiCoolifyInstance[] }>("/v1/coolify/instances") });
+
+export function useAddCoolify() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { name: string; url: string; token: string }) =>
+      api<{ instance: ApiCoolifyInstance }>("/v1/coolify/instances", { method: "POST", body: input }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.coolify }),
+  });
+}
+
+export function useUpdateCoolify() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...input }: { id: number; name?: string; token?: string }) =>
+      api<{ instance: ApiCoolifyInstance }>(`/v1/coolify/instances/${id}`, { method: "PATCH", body: input }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.coolify }),
+  });
+}
+
+export function useRemoveCoolify() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => api<{ ok: true }>(`/v1/coolify/instances/${id}`, { method: "DELETE" }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: keys.coolify });
+      void qc.invalidateQueries({ queryKey: ["deployments"] });
+    },
+  });
+}
+
+export function useLinkCoolify(full: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (instanceId: number) =>
+      api<{ matched: { stage: string; uuid: string; name: string }[] }>(`/v1/repos/${full}/coolify`, { method: "PUT", body: { instanceId } }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: keys.deployments(full) });
+      void qc.invalidateQueries({ queryKey: keys.coolify });
+    },
+  });
+}
+
+export function useUnlinkCoolify(full: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api<{ ok: true }>(`/v1/repos/${full}/coolify`, { method: "DELETE" }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: keys.deployments(full) });
+      void qc.invalidateQueries({ queryKey: keys.coolify });
+    },
+  });
+}
+
+const ACTIVE = new Set(["queued", "in_progress"]);
+export const isActive = (status: string) => ACTIVE.has(status);
+
+/** Polls faster while something is building. */
+export const useDeployments = (full: string) =>
+  useQuery({
+    queryKey: keys.deployments(full),
+    queryFn: () => api<RepoDeploymentsResponse>(`/v1/repos/${full}/deployments`),
+    refetchInterval: (q) => (q.state.data?.apps.some((a) => a.deployments[0] && isActive(a.deployments[0].status)) ? 4_000 : 20_000),
+    placeholderData: keepPreviousData,
+    retry: false,
+  });
+
+export const useDeploymentDetail = (full: string, app: string, id: string, live: boolean) =>
+  useQuery({
+    queryKey: keys.deployment(full, app, id),
+    queryFn: () => api<DeploymentDetail>(`/v1/repos/${full}/deployments/${app}/${id}`),
+    refetchInterval: live ? 3_000 : false,
+  });
+
+export function useExplain(full: string, app: string, id: string) {
+  return useMutation({
+    mutationFn: () => api<{ explanation: string }>(`/v1/repos/${full}/deployments/${app}/${id}/explain`, { method: "POST" }),
+  });
+}
+
+export function useRedeploy(full: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ app, force }: { app: string; force: boolean }) =>
+      api<{ deploymentUuid: string | null }>(`/v1/repos/${full}/apps/${app}/deploy`, { method: "POST", body: { force } }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: keys.deployments(full) });
+      void qc.invalidateQueries({ queryKey: ["events"] });
+    },
+  });
+}
+
+export const useSetupPlan = (full: string, enabled: boolean) =>
+  useQuery({
+    queryKey: ["coolify-setup", full],
+    queryFn: () => api<CoolifySetupPlan>(`/v1/repos/${full}/coolify/setup`),
+    enabled,
+    staleTime: 0,
+    gcTime: 0,
+    retry: false,
+  });
+
+export function useRunSetup(full: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (req: CoolifySetupRequest) => api<CoolifySetupResult>(`/v1/repos/${full}/coolify/setup`, { method: "POST", body: req }),
+    onSettled: () => {
+      void qc.invalidateQueries({ queryKey: keys.deployments(full) });
+      void qc.invalidateQueries({ queryKey: ["events"] });
+    },
   });
 }

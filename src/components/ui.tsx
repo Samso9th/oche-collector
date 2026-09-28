@@ -151,6 +151,7 @@ export function Dialog({
   description,
   children,
   className,
+  size = "md",
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -158,6 +159,7 @@ export function Dialog({
   description?: ReactNode;
   children: ReactNode;
   className?: string;
+  size?: "md" | "lg" | "xl";
 }) {
   return (
     <BaseDialog.Root open={open} onOpenChange={onOpenChange}>
@@ -165,7 +167,8 @@ export function Dialog({
         <BaseDialog.Backdrop className="backdrop fixed inset-0 z-40 bg-black/30 backdrop-blur-[2px] dark:bg-black/50" />
         <BaseDialog.Popup
           className={clsx(
-            "dialog z-50 w-[calc(100vw-24px)] max-w-md rounded-2xl bg-surface p-5 shadow-pop outline-none sm:p-6",
+            "dialog z-50 w-[calc(100vw-24px)] rounded-2xl bg-surface p-5 shadow-pop outline-none sm:p-6",
+            { md: "max-w-md", lg: "max-w-2xl", xl: "max-w-4xl" }[size],
             className,
           )}
         >

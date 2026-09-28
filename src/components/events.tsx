@@ -2,6 +2,11 @@ import { Link } from "@tanstack/react-router";
 import clsx from "clsx";
 import {
   AlertTriangle,
+  CircleCheck,
+  CircleX,
+  Power,
+  Rocket,
+  Server,
   ArrowUpRight,
   Ban,
   Clock,
@@ -31,6 +36,11 @@ const LOOK: Record<EventType, { icon: LucideIcon; tone: string }> = {
   onboarded: { icon: Flag, tone: "text-ember" },
   "branch-created": { icon: GitBranch, tone: "text-ink-2" },
   "mode-changed": { icon: SlidersHorizontal, tone: "text-ink-2" },
+  "deploy-succeeded": { icon: CircleCheck, tone: "text-prod" },
+  "deploy-failed": { icon: CircleX, tone: "text-danger" },
+  "deploy-triggered": { icon: Rocket, tone: "text-ink-2" },
+  "app-stopped": { icon: Power, tone: "text-danger" },
+  "coolify-setup": { icon: Server, tone: "text-ember" },
 };
 
 function dayLabel(iso: string) {

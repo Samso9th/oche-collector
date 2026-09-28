@@ -1,7 +1,7 @@
 import { useSearch } from "@tanstack/react-router";
 import { Check } from "lucide-react";
 import { useState, type ReactNode } from "react";
-import { GithubIcon, Mark } from "../components/logo.tsx";
+import { GithubIcon, Wordmark } from "../components/logo.tsx";
 import { Card, LinkButton, Skeleton } from "../components/ui.tsx";
 import { loginUrl, setupUrl } from "../lib/api.ts";
 import { useSetupStatus } from "../lib/queries.ts";
@@ -10,8 +10,8 @@ function Centered({ children }: { children: ReactNode }) {
   return (
     <div className="grid min-h-dvh place-items-center px-4 py-10">
       <div className="w-full max-w-sm">
-        <div className="mb-6 flex justify-center">
-          <Mark size={36} />
+        <div className="mb-7 flex justify-center">
+          <Wordmark height={34} />
         </div>
         {children}
       </div>

@@ -13,3 +13,5 @@ COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY docker-entrypoint.sh /docker-entrypoint.d/40-oche-config.sh
 RUN chmod +x /docker-entrypoint.d/40-oche-config.sh
 EXPOSE 80
+# 127.0.0.1, not localhost: nginx listens on IPv4 only and localhost can resolve to ::1.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s CMD wget -qO- http://127.0.0.1/ >/dev/null || exit 1

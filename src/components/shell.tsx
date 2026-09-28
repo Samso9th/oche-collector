@@ -35,7 +35,7 @@ export function AppShell() {
       <header className="sticky top-0 z-30 border-b border-line bg-bg/85 backdrop-blur-md">
         <div className="mx-auto flex h-14 max-w-6xl items-center gap-1 px-4 sm:px-6">
           <Link to="/" className="mr-3 rounded-md" aria-label="Oche home">
-            <Wordmark />
+            <Wordmark height={21} />
           </Link>
           <nav className="flex items-center gap-0.5">
             {NAV.map(({ to, label, icon: Icon }) => (

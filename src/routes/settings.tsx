@@ -2,10 +2,14 @@ import { Check, Copy, ExternalLink, Plus, Trash2 } from "lucide-react";
 import { useState, type FormEvent, type ReactNode } from "react";
 import { toast } from "sonner";
 import { Avatar, Badge, Button, Card, Dialog, githubAvatar, LinkButton, Skeleton } from "../components/ui.tsx";
+import { AddCoolifyDialog, CopyButton } from "../components/coolify.tsx";
 import { API_URL } from "../lib/api.ts";
 import { ago } from "../lib/time.ts";
 import {
+  useCoolifyInstances,
   useCreateToken,
+  useRemoveCoolify,
+  useUpdateCoolify,
   useDeleteToken,
   useInstallations,
   useInvite,
@@ -22,6 +26,7 @@ export function SettingsPage() {
     <div className="max-w-3xl space-y-10">
       <h1 className="text-xl font-semibold tracking-[-0.02em]">Settings</h1>
       <Accounts />
+      {isOwner && <CoolifyInstances />}
       {isOwner && <Members />}
       <Tokens />
     </div>
@@ -86,6 +91,95 @@ function Accounts() {
           <p className="px-4 py-6 text-center text-[13px] text-muted">Not installed anywhere yet.</p>
         )}
       </Card>
+    </Section>
+  );
+}
+
+/* ---------------- coolify ---------------- */
+
+function CoolifyInstances() {
+  const q = useCoolifyInstances();
+  const remove = useRemoveCoolify();
+  const update = useUpdateCoolify();
+  const [adding, setAdding] = useState(false);
+  const [rotating, setRotating] = useState<number | null>(null);
+  const [token, setToken] = useState("");
+
+  return (
+    <Section
+      title="Coolify"
+      description="The Coolify instances your repos deploy on. Link each repo to one from its page; repos on the same Coolify share a connection."
+      action={
+        <Button size="sm" onClick={() => setAdding(true)}>
+          <Plus className="size-3.5" /> Connect Coolify
+        </Button>
+      }
+    >
+      <Card className="divide-y divide-line">
+        {q.isLoading && <Skeleton className="m-4 h-5 w-1/2" />}
+        {q.data?.instances.map((i) => (
+          <div key={i.id} className="px-4 py-3.5">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-[13.5px] font-medium">{i.name}</span>
+              {i.version && <Badge>v{i.version.replace(/^v/, "")}</Badge>}
+              {i.lastError ? <Badge tone="danger">Can't connect</Badge> : <Badge tone="ok">Connected</Badge>}
+              <span className="text-[12px] text-muted">
+                {i.repos} repo{i.repos === 1 ? "" : "s"}
+              </span>
+              <span className="ml-auto flex gap-1">
+                <Button size="sm" variant="ghost" onClick={() => setRotating(i.id)}>
+                  New token
+                </Button>
+                <RemoveButton label={`Remove ${i.name}`} onConfirm={() => remove.mutate(i.id, { onSuccess: () => toast(`Removed ${i.name}`) })} />
+              </span>
+            </div>
+            <a href={i.url} target="_blank" rel="noreferrer" className="mt-0.5 inline-flex items-center gap-1 text-[12.5px] text-muted hover:text-ink">
+              {i.url} <ExternalLink className="size-3" />
+            </a>
+            {i.lastError && <p className="mt-1 text-[12.5px] text-danger">{i.lastError}</p>}
+            <div className="mt-2.5 rounded-lg bg-surface-2 px-3 py-2.5">
+              <p className="text-[12px] text-muted">
+                For instant deploy alerts, paste this into that Coolify under <span className="text-ink-2">Notifications → Webhook</span> and turn on deployment events:
+              </p>
+              <div className="mt-1.5 flex items-center gap-2">
+                <code className="min-w-0 flex-1 truncate font-mono text-[12px]">{i.webhookUrl}</code>
+                <CopyButton text={i.webhookUrl} label="Copy" />
+              </div>
+            </div>
+          </div>
+        ))}
+        {q.data?.instances.length === 0 && <p className="px-4 py-6 text-center text-[13px] text-muted">No Coolify connected yet.</p>}
+      </Card>
+      <AddCoolifyDialog open={adding} onOpenChange={setAdding} />
+      <Dialog open={rotating !== null} onOpenChange={(o) => !o && setRotating(null)} title="Replace the API token" description="Oche checks the new token before swapping it in.">
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (rotating === null) return;
+            update.mutate(
+              { id: rotating, token },
+              {
+                onSuccess: () => {
+                  toast.success("Token replaced");
+                  setRotating(null);
+                  setToken("");
+                },
+                onError: (err) => toast.error("That token didn't work", { description: err.message }),
+              },
+            );
+          }}
+        >
+          <input value={token} onChange={(e) => setToken(e.target.value)} type="password" placeholder="12|xxxxxxxx" className={`${inputClass} w-full font-mono`} autoComplete="off" required />
+          <div className="mt-4 flex justify-end gap-2">
+            <Button type="button" variant="ghost" onClick={() => setRotating(null)}>
+              Cancel
+            </Button>
+            <Button type="submit" variant="primary" loading={update.isPending}>
+              Replace
+            </Button>
+          </div>
+        </form>
+      </Dialog>
     </Section>
   );
 }

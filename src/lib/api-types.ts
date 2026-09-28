@@ -51,7 +51,12 @@ export type EventType =
   | "pr-retargeted"
   | "branch-restored"
   | "direct-push"
-  | "mode-changed";
+  | "mode-changed"
+  | "deploy-succeeded"
+  | "deploy-failed"
+  | "deploy-triggered"
+  | "app-stopped"
+  | "coolify-setup";
 
 export interface OcheEvent {
   type: EventType;
@@ -194,6 +199,91 @@ export interface ShipRequest {
 export type ShipStep = { label: string; head: string; base: string } & PromoteResponse;
 
 export type ShipResponse = { steps: ShipStep[]; completed: boolean };
+
+/* ---- Coolify (mirrors server/src/services/coolify.ts and server/src/coolify/*) ---- */
+
+export interface ApiCoolifyInstance {
+  id: number;
+  name: string;
+  url: string;
+  version: string | null;
+  lastCheckedAt: string | null;
+  lastError: string | null;
+  webhookUrl: string;
+  repos: number;
+}
+
+export interface ApiDeployment {
+  uuid: string;
+  status: string; // queued | in_progress | finished | failed | cancelled-by-user
+  commit: string | null;
+  commitMessage: string | null;
+  createdAt: string;
+  updatedAt: string;
+  trigger: "webhook" | "api" | "manual";
+  forceRebuild: boolean;
+}
+
+export interface ApiCoolifyApp {
+  uuid: string;
+  name: string;
+  stage: Stage;
+  branch: string | null;
+  fqdn: string | null;
+  state: string;
+  health: string | null;
+  buildPack: string | null;
+  baseDirectory: string | null;
+  deployments: ApiDeployment[];
+  coolifyUrl: string;
+}
+
+export interface RepoDeploymentsResponse {
+  instance: ApiCoolifyInstance | null;
+  apps: ApiCoolifyApp[];
+  otherBranches: { uuid: string; name: string; branch: string | null }[];
+}
+
+export interface LogLine {
+  output: string;
+  type: "stdout" | "stderr";
+  hidden: boolean;
+  command?: string | null;
+  timestamp?: string | null;
+}
+
+export interface DeploymentDetail {
+  deployment: ApiDeployment;
+  app: { uuid: string; name: string; stage: Stage; fqdn: string | null };
+  lines: LogLine[];
+  report: string;
+}
+
+export type BuildPack = "nixpacks" | "dockerfile" | "dockercompose" | "static";
+
+export interface CoolifySetupPlan {
+  projectName: string;
+  existingProject: string | null;
+  servers: { uuid: string; name: string; ip: string; usable: boolean }[];
+  githubApps: { uuid: string; name: string; organization: string | null; canSeeRepo: boolean | null }[];
+  detected: { name: string; baseDirectory: string; buildPack: BuildPack; port: string; why: string }[];
+  branches: Branches;
+}
+
+export interface CoolifySetupRequest {
+  projectName: string;
+  serverUuid: string;
+  githubAppUuid: string;
+  apps: { name: string; baseDirectory: string; buildPack: BuildPack; port: string; domains: Record<Stage, string> }[];
+  databases: { postgres: boolean; redis: boolean };
+  deploy: boolean;
+}
+
+export interface CoolifySetupResult {
+  projectUuid: string;
+  steps: { label: string; ok: boolean; detail?: string }[];
+  created: { stage: Stage; kind: "app" | "postgres" | "redis"; name: string; uuid: string }[];
+}
 
 export type ApiError = { error: string };
 /** GET /setup/status (no auth) */

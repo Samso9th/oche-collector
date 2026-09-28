@@ -4,6 +4,7 @@ import clsx from "clsx";
 import { ArrowDown, ArrowRight, Check, ExternalLink, MoreHorizontal, Zap } from "lucide-react";
 import type { ApiRepo, BranchHead, OpenPromotion, Promotion, RepoStatus, Stage } from "../lib/api-types.ts";
 import { ago } from "../lib/time.ts";
+import { StageDeploys } from "./coolify.tsx";
 import { pendingFor, usePromoteAction } from "./promote.tsx";
 import { Avatar, Button, githubAvatar, Skeleton, STAGE_LABEL, StageDot } from "./ui.tsx";
 
@@ -18,7 +19,7 @@ export function Pipeline({ repo, status, loading }: { repo: ApiRepo; status: Rep
   return (
     <>
       <div className="grid grid-cols-1 items-stretch gap-2 lg:grid-cols-[1fr_auto_1fr_auto_1fr] lg:gap-0">
-        <StageCard stage="dev" branch={b.dev} head={status?.heads.dev} loading={loading} />
+        <StageCard repo={repo} stage="dev" branch={b.dev} head={status?.heads.dev} loading={loading} />
         <Connector
           to="staging"
           pending={pendingFor(status, "staging")}
@@ -27,7 +28,7 @@ export function Pipeline({ repo, status, loading }: { repo: ApiRepo; status: Rep
           onPromote={() => promote.request("staging")}
           loading={loading}
         />
-        <StageCard stage="staging" branch={b.staging} head={status?.heads.staging} loading={loading} />
+        <StageCard repo={repo} stage="staging" branch={b.staging} head={status?.heads.staging} loading={loading} />
         <Connector
           to="prod"
           pending={pendingFor(status, "prod")}
@@ -37,6 +38,7 @@ export function Pipeline({ repo, status, loading }: { repo: ApiRepo; status: Rep
           loading={loading}
         />
         <StageCard
+          repo={repo}
           stage="prod"
           branch={b.prod}
           head={status?.heads.prod}
@@ -54,12 +56,14 @@ export function Pipeline({ repo, status, loading }: { repo: ApiRepo; status: Rep
 }
 
 function StageCard({
+  repo,
   stage,
   branch,
   head,
   loading,
   menu,
 }: {
+  repo: ApiRepo;
   stage: Stage;
   branch: string;
   head: BranchHead | undefined;
@@ -100,6 +104,7 @@ function StageCard({
           <p className="text-[13px] text-muted">Branch not found. Setting the repo up again recreates it.</p>
         )}
       </div>
+      <StageDeploys repo={repo} stage={stage} />
     </section>
   );
 }
