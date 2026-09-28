@@ -1,5 +1,5 @@
 # Oche dashboard: a static build served by nginx.
-# Set API_URL at runtime (e.g. https://api.oche.example.com); no rebuild needed to change it.
+# Set API_URL at runtime (e.g. https://deploy.oche.io); no rebuild needed to change it.
 FROM node:26-alpine AS build
 WORKDIR /app
 COPY package.json package-lock.json ./

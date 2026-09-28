@@ -20,7 +20,7 @@ import {
 } from "../lib/queries.ts";
 import { ago } from "../lib/time.ts";
 import { CoolifySetupDialog } from "./coolify-setup.tsx";
-import { Badge, Button, Card, Dialog, Empty, Skeleton, STAGE_LABEL, StageDot } from "./ui.tsx";
+import { Badge, Button, Card, Dialog, Empty, Select, Skeleton, STAGE_LABEL, StageDot } from "./ui.tsx";
 
 /* ---------------- small pieces ---------------- */
 
@@ -213,19 +213,15 @@ function ConnectCoolify({ repo, canEdit }: { repo: ApiRepo; canEdit: boolean }) 
           <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
             {list.length > 0 && (
               <>
-                <select
-                  value={choice}
-                  onChange={(e) => setChoice(e.target.value ? Number(e.target.value) : "")}
-                  className="field h-9 min-w-0 flex-1 rounded-lg bg-surface px-2.5 text-[13px] outline-none sm:w-56 sm:flex-none"
+                <Select
+                  value={choice === "" ? "" : String(choice)}
+                  onChange={(v) => setChoice(Number(v))}
+                  size="md"
+                  className="flex-1 sm:w-56 sm:flex-none"
                   aria-label="Coolify instance"
-                >
-                  <option value="">Choose a Coolify…</option>
-                  {list.map((i) => (
-                    <option key={i.id} value={i.id}>
-                      {i.name}
-                    </option>
-                  ))}
-                </select>
+                  placeholder="Choose a Coolify…"
+                  options={list.map((i) => ({ value: String(i.id), label: i.name, hint: i.url.replace(/^https?:\/\//, "") }))}
+                />
                 <Button variant="primary" disabled={choice === ""} loading={link.isPending} onClick={() => choice !== "" && doLink(choice)}>
                   Link
                 </Button>

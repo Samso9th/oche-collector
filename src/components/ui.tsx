@@ -1,6 +1,7 @@
 import { Dialog as BaseDialog } from "@base-ui/react/dialog";
+import { Select as BaseSelect } from "@base-ui/react/select";
 import clsx from "clsx";
-import { Loader2 } from "lucide-react";
+import { Check, ChevronsUpDown, Loader2 } from "lucide-react";
 import { useState, type ButtonHTMLAttributes, type ReactNode } from "react";
 import type { Stage } from "../lib/api-types.ts";
 
@@ -178,5 +179,85 @@ export function Dialog({
         </BaseDialog.Popup>
       </BaseDialog.Portal>
     </BaseDialog.Root>
+  );
+}
+
+/* ---------------- Select ---------------- */
+
+export interface SelectOption<T extends string> {
+  value: T;
+  label: ReactNode;
+  /** Quieter second line, e.g. an IP or "can't see repo". */
+  hint?: ReactNode;
+}
+
+/**
+ * Our dropdown, in place of the browser's. The trigger looks like the text fields
+ * beside it, and the list drops from it at least as wide, scaling from the trigger.
+ */
+export function Select<T extends string>({
+  value,
+  onChange,
+  options,
+  placeholder = "Choose…",
+  disabled,
+  size = "sm",
+  className,
+  "aria-label": ariaLabel,
+}: {
+  value: T | "";
+  onChange: (value: T) => void;
+  options: readonly SelectOption<T>[];
+  placeholder?: string;
+  disabled?: boolean;
+  size?: "sm" | "md";
+  className?: string;
+  "aria-label"?: string;
+}) {
+  const items = options.map((o) => ({ value: o.value, label: o.label }));
+  return (
+    <BaseSelect.Root<T>
+      items={items}
+      value={value === "" ? null : value}
+      onValueChange={(v) => v !== null && onChange(v)}
+      disabled={disabled}
+    >
+      <BaseSelect.Trigger
+        aria-label={ariaLabel}
+        className={clsx(
+          "field flex w-full min-w-0 cursor-default items-center gap-2 rounded-lg bg-surface text-left outline-none select-none disabled:cursor-not-allowed disabled:opacity-60 data-popup-open:shadow-[0_0_0_1px_var(--line-strong),0_0_0_4px_var(--line)]",
+          size === "sm" ? "h-8 px-2.5 text-[13px]" : "h-9 px-3 text-[13.5px]",
+          className,
+        )}
+      >
+        <BaseSelect.Value className="min-w-0 flex-1 truncate data-placeholder:text-muted" placeholder={placeholder} />
+        <BaseSelect.Icon className="shrink-0 text-muted">
+          <ChevronsUpDown className="size-3.5" />
+        </BaseSelect.Icon>
+      </BaseSelect.Trigger>
+      <BaseSelect.Portal>
+        <BaseSelect.Positioner sideOffset={6} align="start" alignItemWithTrigger={false} className="z-50 outline-none">
+          <BaseSelect.Popup className="popup max-h-[var(--available-height)] min-w-[var(--anchor-width)] overflow-y-auto rounded-xl bg-surface p-1 shadow-pop outline-none">
+            <BaseSelect.List>
+              {options.map((o) => (
+                <BaseSelect.Item
+                  key={o.value}
+                  value={o.value}
+                  className="grid cursor-default grid-cols-[14px_1fr] items-start gap-2 rounded-lg py-1.5 pr-3 pl-2 text-[13px] outline-none select-none data-disabled:opacity-50 data-highlighted:bg-surface-2"
+                >
+                  <BaseSelect.ItemIndicator className="mt-[3px] text-ember">
+                    <Check className="size-3.5" strokeWidth={2.5} />
+                  </BaseSelect.ItemIndicator>
+                  <span className="col-start-2 min-w-0">
+                    <BaseSelect.ItemText className="block truncate">{o.label}</BaseSelect.ItemText>
+                    {o.hint && <span className="block truncate text-[11.5px] text-muted">{o.hint}</span>}
+                  </span>
+                </BaseSelect.Item>
+              ))}
+            </BaseSelect.List>
+          </BaseSelect.Popup>
+        </BaseSelect.Positioner>
+      </BaseSelect.Portal>
+    </BaseSelect.Root>
   );
 }

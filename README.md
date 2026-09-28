@@ -17,6 +17,6 @@ Add this repo as an application with the Dockerfile build pack, port 80, and one
 
 | Variable | Example |
 | --- | --- |
-| `API_URL` | `https://api.oche.example.com` |
+| `API_URL` | `https://deploy.oche.io` |
 
-The container writes `API_URL` into `/config.js` when it starts, so moving the API doesn't need a rebuild. Serve the dashboard on the same parent domain as the API (`oche.example.com`), and set the server's `OCHE_COLLECTOR_URL` to this URL.
+The container writes `API_URL` into `/config.js` when it starts, so moving the API doesn't need a rebuild. Serve the dashboard on the same parent domain as the API (`ship.oche.io`), and set the server's `OCHE_COLLECTOR_URL` to this URL.

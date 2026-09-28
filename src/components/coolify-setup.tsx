@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import type { ApiRepo, BuildPack, CoolifySetupRequest, CoolifySetupResult, Stage } from "../lib/api-types.ts";
 import { useRunSetup, useSetupPlan } from "../lib/queries.ts";
-import { Button, Dialog, Skeleton, STAGE_LABEL, StageDot } from "./ui.tsx";
+import { Button, Dialog, Select, Skeleton, STAGE_LABEL, StageDot, type SelectOption } from "./ui.tsx";
 
 type AppDraft = CoolifySetupRequest["apps"][number] & { touched: Partial<Record<Stage, boolean>> };
 
@@ -19,6 +19,13 @@ export function suggestDomains(prodHost: string, index = 0): Record<Stage, strin
   if (!rest.includes(".")) return { prod: host, dev: `dev.${host}`, staging: index === 0 ? `sandbox.${host}` : `sandbox-${index}.${host}` };
   return { prod: host, dev: `${sub}dev.${rest}`, staging: index === 0 ? `sandbox.${rest}` : `${sub}sandbox.${rest}` };
 }
+
+const BUILD_PACKS: SelectOption<BuildPack>[] = [
+  { value: "nixpacks", label: "Nixpacks" },
+  { value: "dockerfile", label: "Dockerfile" },
+  { value: "dockercompose", label: "Compose" },
+  { value: "static", label: "Static" },
+];
 
 const field = "field h-8 w-full min-w-0 rounded-lg bg-surface px-2.5 text-[13px] outline-none placeholder:text-muted";
 const STAGES: Stage[] = ["prod", "staging", "dev"];
@@ -110,25 +117,26 @@ export function CoolifySetupDialog({ repo, open, onOpenChange }: { repo: ApiRepo
             </label>
             <label className="block">
               <span className="mb-1 block text-[12px] font-medium text-ink-2">Server</span>
-              <select value={serverUuid} onChange={(e) => setServerUuid(e.target.value)} className={field}>
-                {plan.data.servers.map((s) => (
-                  <option key={s.uuid} value={s.uuid}>
-                    {s.name} ({s.ip})
-                  </option>
-                ))}
-              </select>
+              <Select
+                value={serverUuid}
+                onChange={setServerUuid}
+                aria-label="Server"
+                options={plan.data.servers.map((s) => ({ value: s.uuid, label: s.name, hint: s.ip }))}
+              />
             </label>
             <label className="block">
               <span className="mb-1 block text-[12px] font-medium text-ink-2">GitHub source</span>
-              <select value={githubAppUuid} onChange={(e) => setGithubAppUuid(e.target.value)} className={field}>
-                {plan.data.githubApps.map((g) => (
-                  <option key={g.uuid} value={g.uuid}>
-                    {g.name}
-                    {g.organization ? ` (${g.organization})` : ""}
-                    {g.canSeeRepo === false ? " · can't see repo" : ""}
-                  </option>
-                ))}
-              </select>
+              <Select
+                value={githubAppUuid}
+                onChange={setGithubAppUuid}
+                aria-label="GitHub source"
+                placeholder="No sources"
+                options={plan.data.githubApps.map((g) => ({
+                  value: g.uuid,
+                  label: g.organization ? `${g.name} (${g.organization})` : g.name,
+                  hint: g.canSeeRepo === false ? `Can't see ${repo.name}` : undefined,
+                }))}
+              />
             </label>
           </div>
           {gh?.canSeeRepo === false && (
@@ -157,12 +165,7 @@ export function CoolifySetupDialog({ repo, open, onOpenChange }: { repo: ApiRepo
                   <div className="grid grid-cols-2 gap-2 sm:grid-cols-[1.2fr_1fr_1fr_0.6fr_auto]">
                     <input value={a.name} onChange={(e) => update(i, { name: e.target.value })} className={field} aria-label="App name" placeholder="api" />
                     <input value={a.baseDirectory} onChange={(e) => update(i, { baseDirectory: e.target.value })} className={clsx(field, "font-mono")} aria-label="Base directory" placeholder="/" />
-                    <select value={a.buildPack} onChange={(e) => update(i, { buildPack: e.target.value as BuildPack })} className={field} aria-label="Build pack">
-                      <option value="nixpacks">Nixpacks</option>
-                      <option value="dockerfile">Dockerfile</option>
-                      <option value="dockercompose">Compose</option>
-                      <option value="static">Static</option>
-                    </select>
+                    <Select value={a.buildPack} onChange={(buildPack) => update(i, { buildPack })} aria-label="Build pack" options={BUILD_PACKS} />
                     <input value={a.port} onChange={(e) => update(i, { port: e.target.value })} className={clsx(field, "font-mono")} aria-label="Port" placeholder="3000" />
                     <button
                       onClick={() => setApps((l) => l.filter((_, j) => j !== i))}

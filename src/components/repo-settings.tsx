@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import type { ApiRepo, Stage } from "../lib/api-types.ts";
 import { useUpdateRepo } from "../lib/queries.ts";
-import { Button, Card, STAGE_LABEL, StageDot } from "./ui.tsx";
+import { Button, Card, Select, STAGE_LABEL, StageDot } from "./ui.tsx";
 
 const field = "field h-8 w-full min-w-0 rounded-lg bg-surface px-2.5 text-[13px] outline-none";
 
@@ -68,16 +68,17 @@ export function RepoSettings({ repo, canEdit }: { repo: ApiRepo; canEdit: boolea
 
       <label className="mt-4 block">
         <span className="mb-1 block text-[12px] font-medium text-ink-2">Work PRs into {repo.branches!.dev}</span>
-        <select
+        <Select
           value={repo.workMergeMethod}
           disabled={!canEdit}
-          onChange={(e) => save({ workMergeMethod: e.target.value as ApiRepo["workMergeMethod"] }, "Saved")}
-          className={field}
-        >
-          <option value="merge">Merge commit (keeps every commit)</option>
-          <option value="squash">Squash (one commit per PR)</option>
-          <option value="rebase">Rebase (commits replayed on {repo.branches!.dev})</option>
-        </select>
+          onChange={(workMergeMethod) => save({ workMergeMethod }, "Saved")}
+          aria-label="Merge method"
+          options={[
+            { value: "merge", label: "Merge commit", hint: "Keeps every commit" },
+            { value: "squash", label: "Squash", hint: "One commit per PR" },
+            { value: "rebase", label: "Rebase", hint: `Commits replayed on ${repo.branches!.dev}` },
+          ]}
+        />
         <span className="mt-1 block text-[11.5px] text-muted">
           {repo.workMergeMethod === "squash"
             ? "Tidy history, but keep branches short-lived: reusing a branch after a squash brings its old commits back."
