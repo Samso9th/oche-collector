@@ -210,7 +210,12 @@ export interface ApiCoolifyInstance {
   lastCheckedAt: string | null;
   lastError: string | null;
   webhookUrl: string;
-  repos: number;
+  /** Uses a Cloudflare Access service token. */
+  cloudflareAccess: boolean;
+  /** Apps Oche saw on this Coolify at the last check. */
+  appCount: number | null;
+  /** Repos in Oche linked to this Coolify. */
+  linkedRepos: number;
 }
 
 export interface ApiDeployment {
@@ -242,6 +247,8 @@ export interface RepoDeploymentsResponse {
   instance: ApiCoolifyInstance | null;
   apps: ApiCoolifyApp[];
   otherBranches: { uuid: string; name: string; branch: string | null }[];
+  /** When nothing matched: apps building a repo with the same name under another owner. */
+  sameName: { uuid: string; name: string; repo: string | null; branch: string | null }[];
 }
 
 export interface LogLine {

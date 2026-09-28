@@ -68,17 +68,29 @@ export function AddCoolifyDialog({ open, onOpenChange, onAdded }: { open: boolea
   const [name, setName] = useState("");
   const [url, setUrl] = useState("");
   const [token, setToken] = useState("");
+  const [access, setAccess] = useState(false);
+  const [cfId, setCfId] = useState("");
+  const [cfSecret, setCfSecret] = useState("");
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
     add.mutate(
-      { name: name.trim() || url.replace(/^https?:\/\//, ""), url, token },
+      {
+        name: name.trim() || url.replace(/^https?:\/\//, ""),
+        url,
+        token,
+        ...(access && cfId && cfSecret ? { cfAccessClientId: cfId.trim(), cfAccessClientSecret: cfSecret.trim() } : {}),
+      },
       {
         onSuccess: ({ instance }) => {
-          toast.success(`Connected to ${instance.name}`, { description: instance.version ? `Coolify ${instance.version}` : undefined });
+          toast.success(`Connected to ${instance.name}`, {
+            description: [instance.version && `Coolify ${instance.version}`, instance.appCount !== null && `${instance.appCount} apps found`].filter(Boolean).join(" · ") || undefined,
+          });
           setName("");
           setUrl("");
           setToken("");
+          setCfId("");
+          setCfSecret("");
           onOpenChange(false);
           onAdded?.(instance.id);
         },
@@ -115,6 +127,7 @@ export function AddCoolifyDialog({ open, onOpenChange, onAdded }: { open: boolea
           <span className="font-mono text-[12px]">read:sensitive</span> (for build logs), <span className="font-mono text-[12px]">write</span> (for setup) and{" "}
           <span className="font-mono text-[12px]">deploy</span>. On a self-hosted Coolify, API access must be on under Settings → Advanced.
         </p>
+        <AccessFields open={access} onOpen={setAccess} id={cfId} secret={cfSecret} onId={setCfId} onSecret={setCfSecret} />
         <div className="flex justify-end gap-2 pt-2">
           <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
             Cancel
@@ -125,6 +138,44 @@ export function AddCoolifyDialog({ open, onOpenChange, onAdded }: { open: boolea
         </div>
       </form>
     </Dialog>
+  );
+}
+
+/** Cloudflare Access service token, for a Coolify behind Access. */
+export function AccessFields({
+  open,
+  onOpen,
+  id,
+  secret,
+  onId,
+  onSecret,
+  hint,
+}: {
+  open: boolean;
+  onOpen: (o: boolean) => void;
+  id: string;
+  secret: string;
+  onId: (v: string) => void;
+  onSecret: (v: string) => void;
+  hint?: string;
+}) {
+  return (
+    <div className="rounded-lg bg-surface-2 px-3 py-2.5">
+      <label className="flex cursor-pointer items-center gap-2 text-[12.5px] font-medium text-ink-2">
+        <input type="checkbox" checked={open} onChange={(e) => onOpen(e.target.checked)} className="size-3.5 accent-[var(--ember)]" />
+        Coolify is behind Cloudflare Access
+      </label>
+      {open && (
+        <div className="mt-2.5 space-y-2">
+          <p className="text-[12px] leading-relaxed text-muted">
+            In Cloudflare Zero Trust, create a service token (Access → Service credentials) and add a policy to the Coolify application with action{" "}
+            <span className="font-medium text-ink-2">Service Auth</span> that includes it. {hint}
+          </p>
+          <input value={id} onChange={(e) => onId(e.target.value)} placeholder="Client ID (….access)" className={clsx(inputClass, "font-mono")} autoComplete="off" spellCheck={false} />
+          <input value={secret} onChange={(e) => onSecret(e.target.value)} placeholder="Client secret" type="password" className={clsx(inputClass, "font-mono")} autoComplete="off" />
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -269,6 +320,19 @@ export function DeploymentsSection({ repo }: { repo: ApiRepo }) {
             {repo.branches?.staging} and {repo.branches?.dev}, and a database for each.
             {q.data.otherBranches.length > 0 && ` (${q.data.otherBranches.length} app${q.data.otherBranches.length === 1 ? "" : "s"} build other branches.)`}
           </Empty>
+          {q.data.sameName.length > 0 && (
+            <div className="mx-5 mb-5 rounded-lg bg-staging/12 px-3 py-2.5 text-[12.5px] text-ink-2">
+              <p className="font-medium">Did {repo.name} move? These apps build a repo with the same name:</p>
+              <ul className="mt-1 space-y-0.5 font-mono text-[12px]">
+                {q.data.sameName.map((a) => (
+                  <li key={a.uuid}>
+                    {a.name} · {a.repo} @ {a.branch}
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-1.5">Point them at {repo.fullName} in Coolify (the app's Git Source) and they'll show up here.</p>
+            </div>
+          )}
         </Card>
       ) : (
         <div className="grid gap-2 lg:grid-cols-3">

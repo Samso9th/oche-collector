@@ -176,7 +176,7 @@ export const useCoolifyInstances = () =>
 export function useAddCoolify() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (input: { name: string; url: string; token: string }) =>
+    mutationFn: (input: { name: string; url: string; token: string; cfAccessClientId?: string; cfAccessClientSecret?: string }) =>
       api<{ instance: ApiCoolifyInstance }>("/v1/coolify/instances", { method: "POST", body: input }),
     onSuccess: () => qc.invalidateQueries({ queryKey: keys.coolify }),
   });
@@ -185,9 +185,20 @@ export function useAddCoolify() {
 export function useUpdateCoolify() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, ...input }: { id: number; name?: string; token?: string }) =>
+    mutationFn: ({ id, ...input }: { id: number; name?: string; token?: string; cfAccessClientId?: string | null; cfAccessClientSecret?: string }) =>
       api<{ instance: ApiCoolifyInstance }>(`/v1/coolify/instances/${id}`, { method: "PATCH", body: input }),
     onSuccess: () => qc.invalidateQueries({ queryKey: keys.coolify }),
+  });
+}
+
+export function useCheckCoolify() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => api<{ instance: ApiCoolifyInstance }>(`/v1/coolify/instances/${id}/check`, { method: "POST" }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: keys.coolify });
+      void qc.invalidateQueries({ queryKey: ["deployments"] });
+    },
   });
 }
 

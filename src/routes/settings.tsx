@@ -2,10 +2,12 @@ import { Check, Copy, ExternalLink, Plus, Trash2 } from "lucide-react";
 import { useState, type FormEvent, type ReactNode } from "react";
 import { toast } from "sonner";
 import { Avatar, Badge, Button, Card, Dialog, githubAvatar, LinkButton, Skeleton } from "../components/ui.tsx";
-import { AddCoolifyDialog, CopyButton } from "../components/coolify.tsx";
+import { AccessFields, AddCoolifyDialog, CopyButton } from "../components/coolify.tsx";
+import type { ApiCoolifyInstance } from "../lib/api-types.ts";
 import { API_URL } from "../lib/api.ts";
 import { ago } from "../lib/time.ts";
 import {
+  useCheckCoolify,
   useCoolifyInstances,
   useCreateToken,
   useRemoveCoolify,
@@ -100,10 +102,9 @@ function Accounts() {
 function CoolifyInstances() {
   const q = useCoolifyInstances();
   const remove = useRemoveCoolify();
-  const update = useUpdateCoolify();
+  const check = useCheckCoolify();
   const [adding, setAdding] = useState(false);
-  const [rotating, setRotating] = useState<number | null>(null);
-  const [token, setToken] = useState("");
+  const [editing, setEditing] = useState<ApiCoolifyInstance | null>(null);
 
   return (
     <Section
@@ -121,28 +122,49 @@ function CoolifyInstances() {
           <div key={i.id} className="px-4 py-3.5">
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-[13.5px] font-medium">{i.name}</span>
-              {i.version && <Badge>v{i.version.replace(/^v/, "")}</Badge>}
+              {i.version && <Badge>v{i.version}</Badge>}
+              {i.cloudflareAccess && <Badge>Cloudflare Access</Badge>}
               {i.lastError ? <Badge tone="danger">Can't connect</Badge> : <Badge tone="ok">Connected</Badge>}
-              <span className="text-[12px] text-muted">
-                {i.repos} repo{i.repos === 1 ? "" : "s"}
-              </span>
               <span className="ml-auto flex gap-1">
-                <Button size="sm" variant="ghost" onClick={() => setRotating(i.id)}>
-                  New token
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  loading={check.isPending && check.variables === i.id}
+                  onClick={() =>
+                    check.mutate(i.id, {
+                      onSuccess: ({ instance }) =>
+                        instance.lastError
+                          ? toast.error(`${instance.name} isn't reachable`, { description: instance.lastError })
+                          : toast.success(`${instance.name} is connected`, { description: `${instance.appCount ?? 0} apps found` }),
+                    })
+                  }
+                >
+                  Check
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => setEditing(i)}>
+                  Edit
                 </Button>
                 <RemoveButton label={`Remove ${i.name}`} onConfirm={() => remove.mutate(i.id, { onSuccess: () => toast(`Removed ${i.name}`) })} />
               </span>
             </div>
-            <a href={i.url} target="_blank" rel="noreferrer" className="mt-0.5 inline-flex items-center gap-1 text-[12.5px] text-muted hover:text-ink">
-              {i.url} <ExternalLink className="size-3" />
-            </a>
-            {i.lastError && <p className="mt-1 text-[12.5px] text-danger">{i.lastError}</p>}
+            <p className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[12.5px] text-muted">
+              <a href={i.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 hover:text-ink">
+                {i.url} <ExternalLink className="size-3" />
+              </a>
+              <span aria-hidden>·</span>
+              <span>{i.appCount === null ? "apps not checked yet" : `${i.appCount} app${i.appCount === 1 ? "" : "s"} on Coolify`}</span>
+              <span aria-hidden>·</span>
+              <span>
+                {i.linkedRepos} linked repo{i.linkedRepos === 1 ? "" : "s"}
+              </span>
+            </p>
+            {i.lastError && <p className="mt-1.5 line-clamp-3 rounded-lg bg-danger/8 px-3 py-2 text-[12.5px] text-danger">{i.lastError}</p>}
             <div className="mt-2.5 rounded-lg bg-surface-2 px-3 py-2.5">
               <p className="text-[12px] text-muted">
                 For instant deploy alerts, paste this into that Coolify under <span className="text-ink-2">Notifications → Webhook</span> and turn on deployment events:
               </p>
-              <div className="mt-1.5 flex items-center gap-2">
-                <code className="min-w-0 flex-1 truncate font-mono text-[12px]">{i.webhookUrl}</code>
+              <div className="mt-1.5 flex items-start gap-2">
+                <code className="min-w-0 flex-1 font-mono text-[12px] break-all">{i.webhookUrl}</code>
                 <CopyButton text={i.webhookUrl} label="Copy" />
               </div>
             </div>
@@ -151,36 +173,69 @@ function CoolifyInstances() {
         {q.data?.instances.length === 0 && <p className="px-4 py-6 text-center text-[13px] text-muted">No Coolify connected yet.</p>}
       </Card>
       <AddCoolifyDialog open={adding} onOpenChange={setAdding} />
-      <Dialog open={rotating !== null} onOpenChange={(o) => !o && setRotating(null)} title="Replace the API token" description="Oche checks the new token before swapping it in.">
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (rotating === null) return;
-            update.mutate(
-              { id: rotating, token },
-              {
-                onSuccess: () => {
-                  toast.success("Token replaced");
-                  setRotating(null);
-                  setToken("");
-                },
-                onError: (err) => toast.error("That token didn't work", { description: err.message }),
-              },
-            );
-          }}
-        >
-          <input value={token} onChange={(e) => setToken(e.target.value)} type="password" placeholder="12|xxxxxxxx" className={`${inputClass} w-full font-mono`} autoComplete="off" required />
-          <div className="mt-4 flex justify-end gap-2">
-            <Button type="button" variant="ghost" onClick={() => setRotating(null)}>
-              Cancel
-            </Button>
-            <Button type="submit" variant="primary" loading={update.isPending}>
-              Replace
-            </Button>
-          </div>
-        </form>
-      </Dialog>
+      {editing && <EditCoolifyDialog instance={editing} onClose={() => setEditing(null)} />}
     </Section>
+  );
+}
+
+function EditCoolifyDialog({ instance, onClose }: { instance: ApiCoolifyInstance; onClose: () => void }) {
+  const update = useUpdateCoolify();
+  const [name, setName] = useState(instance.name);
+  const [token, setToken] = useState("");
+  const [access, setAccess] = useState(instance.cloudflareAccess);
+  const [cfId, setCfId] = useState("");
+  const [cfSecret, setCfSecret] = useState("");
+
+  const submit = (e: FormEvent) => {
+    e.preventDefault();
+    const accessChange =
+      access && cfId && cfSecret
+        ? { cfAccessClientId: cfId.trim(), cfAccessClientSecret: cfSecret.trim() }
+        : !access && instance.cloudflareAccess
+          ? { cfAccessClientId: null }
+          : {};
+    update.mutate(
+      { id: instance.id, ...(name.trim() !== instance.name ? { name: name.trim() } : {}), ...(token.trim() ? { token: token.trim() } : {}), ...accessChange },
+      {
+        onSuccess: ({ instance: saved }) => {
+          toast.success(`Saved ${saved.name}`, { description: saved.appCount !== null ? `${saved.appCount} apps found` : undefined });
+          onClose();
+        },
+        onError: (err) => toast.error("That didn't connect", { description: err.message }),
+      },
+    );
+  };
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()} title={`Edit ${instance.name}`} description="Oche checks the connection before saving any change to it.">
+      <form onSubmit={submit} className="space-y-3">
+        <label className="block">
+          <span className="mb-1 block text-[12.5px] font-medium text-ink-2">Name</span>
+          <input value={name} onChange={(e) => setName(e.target.value)} className={`${inputClass} w-full`} maxLength={60} />
+        </label>
+        <label className="block">
+          <span className="mb-1 block text-[12.5px] font-medium text-ink-2">New API token</span>
+          <input value={token} onChange={(e) => setToken(e.target.value)} type="password" placeholder="Leave empty to keep the current one" className={`${inputClass} w-full font-mono`} autoComplete="off" />
+        </label>
+        <AccessFields
+          open={access}
+          onOpen={setAccess}
+          id={cfId}
+          secret={cfSecret}
+          onId={setCfId}
+          onSecret={setCfSecret}
+          hint={instance.cloudflareAccess ? "Leave both empty to keep the saved token." : undefined}
+        />
+        <div className="flex justify-end gap-2 pt-2">
+          <Button type="button" variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button type="submit" variant="primary" loading={update.isPending}>
+            Save
+          </Button>
+        </div>
+      </form>
+    </Dialog>
   );
 }
 

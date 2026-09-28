@@ -28,7 +28,10 @@ export async function api<T>(path: string, init: { method?: string; body?: unkno
     throw new ApiError(0, `Can't reach the Oche server at ${API_URL}.`);
   }
   const data = (await res.json().catch(() => ({}))) as T & { error?: string };
-  if (!res.ok) throw new ApiError(res.status, data.error ?? `Request failed (${res.status}).`);
+  if (!res.ok) {
+    const message = data.error ?? `Request failed (${res.status}).`;
+    throw new ApiError(res.status, message.length > 300 ? `${message.slice(0, 300)}…` : message);
+  }
   return data;
 }
 
