@@ -19,7 +19,7 @@ export function ActivityPage() {
         <select
           value={repo}
           onChange={(e) => setRepo(e.target.value)}
-          className="h-8 rounded-lg bg-surface px-2.5 text-[13px] shadow-card outline-none"
+          className="h-8 field rounded-lg bg-surface px-2.5 text-[13px] outline-none"
           aria-label="Filter by repo"
         >
           <option value="">All repos</option>

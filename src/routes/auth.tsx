@@ -72,7 +72,7 @@ export function SetupPage() {
                     onChange={(e) => setName(e.target.value)}
                     placeholder={`Oche ${status.data?.owner ?? ""}`}
                     maxLength={34}
-                    className="mt-2.5 h-9 w-full rounded-lg bg-surface px-3 text-[13.5px] shadow-card outline-none placeholder:text-muted focus-visible:outline-2 focus-visible:outline-ember"
+                    className="mt-2.5 h-9 w-full field rounded-lg bg-surface px-3 text-[13.5px] outline-none placeholder:text-muted"
                     aria-label="App name"
                   />
                   <LinkButton href={setupUrl(name.trim() || undefined)} variant="primary" className="mt-2.5 w-full">

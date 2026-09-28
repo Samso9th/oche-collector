@@ -44,7 +44,7 @@ function Section({ title, description, action, children }: { title: string; desc
 }
 
 const inputClass =
-  "h-9 min-w-0 flex-1 rounded-lg bg-surface px-3 text-[13.5px] shadow-card outline-none placeholder:text-muted focus-visible:outline-2 focus-visible:outline-ember";
+  "h-9 min-w-0 flex-1 field rounded-lg bg-surface px-3 text-[13.5px] outline-none placeholder:text-muted";
 
 /* ---------------- accounts ---------------- */
 

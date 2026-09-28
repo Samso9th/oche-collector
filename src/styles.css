@@ -114,6 +114,20 @@ body {
   border-radius: 6px;
 }
 
+/* Text fields get one quiet ring on the field itself, never the global outline. */
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline: none;
+}
+.field {
+  box-shadow: var(--shadow-card);
+  transition: box-shadow 150ms ease;
+}
+.field:focus-within {
+  box-shadow: 0 0 0 1px var(--line-strong), 0 0 0 4px var(--line);
+}
+
 /* Press feedback on anything pressable. Fast, and never on keyboard focus alone. */
 .pressable {
   transition: transform 140ms var(--ease-out), background-color 150ms ease, box-shadow 150ms ease, color 150ms ease;

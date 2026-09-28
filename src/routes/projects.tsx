@@ -179,7 +179,7 @@ function NotSetUp({ repos, canSetUp }: { repos: ApiRepo[]; canSetUp: boolean }) 
         <h2 id="not-set-up" className="text-[13px] font-medium text-muted">
           Not set up <span className="tabular-nums">({repos.length})</span>
         </h2>
-        <label className="flex h-8 w-full max-w-60 items-center gap-2 rounded-lg bg-surface px-2.5 shadow-card focus-within:outline-2 focus-within:outline-ember">
+        <label className="flex h-8 w-full max-w-60 items-center gap-2 field rounded-lg bg-surface px-2.5">
           <Search className="size-3.5 text-muted" aria-hidden />
           <input
             value={query}
