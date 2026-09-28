@@ -3,7 +3,7 @@ import { useState, type FormEvent, type ReactNode } from "react";
 import { toast } from "sonner";
 import { Avatar, Badge, Button, Card, Dialog, githubAvatar, LinkButton, Skeleton } from "../components/ui.tsx";
 import { AccessFields, AddCoolifyDialog, CopyButton } from "../components/coolify.tsx";
-import type { ApiCoolifyInstance } from "../lib/api-types.ts";
+import type { ApiCoolifyInstance, ApiWaitlistEntry } from "../lib/api-types.ts";
 import { API_URL } from "../lib/api.ts";
 import { ago } from "../lib/time.ts";
 import {
@@ -16,10 +16,13 @@ import {
   useDeleteToken,
   useInstallations,
   useInvite,
+  useInviteFromWaitlist,
   useMe,
   useMembers,
+  useRemoveFromWaitlist,
   useRemoveMember,
   useTokens,
+  useWaitlist,
 } from "../lib/queries.ts";
 
 export function SettingsPage() {
@@ -31,7 +34,99 @@ export function SettingsPage() {
       <Accounts />
       {isOwner && <CoolifyInstances />}
       {isOwner && <Members />}
+      {isOwner && <Waitlist />}
       <Tokens />
+    </div>
+  );
+}
+
+/* ---------------- waitlist (owner only) ---------------- */
+
+function Waitlist() {
+  const q = useWaitlist();
+  const entries = q.data?.entries ?? [];
+  const waiting = entries.filter((e) => e.status === "waiting").length;
+  return (
+    <Section
+      title="Waitlist"
+      description="People who asked for access on oche.io. Inviting someone lets their GitHub account sign in. Oche doesn't email them, so tell them yourself."
+      action={waiting > 0 ? <Badge tone="ember">{waiting} waiting</Badge> : undefined}
+    >
+      {q.isLoading ? (
+        <Skeleton className="h-24 rounded-xl" />
+      ) : entries.length === 0 ? (
+        <Card className="px-4 py-6 text-center text-[13px] text-muted">Nobody yet. Signups from oche.io show up here.</Card>
+      ) : (
+        <Card className="divide-y divide-line">
+          {entries.map((e) => (
+            <WaitlistRow key={e.id} entry={e} />
+          ))}
+        </Card>
+      )}
+    </Section>
+  );
+}
+
+function WaitlistRow({ entry: e }: { entry: ApiWaitlistEntry }) {
+  const invite = useInviteFromWaitlist();
+  const remove = useRemoveFromWaitlist();
+  const [login, setLogin] = useState(e.login ?? "");
+  const value = login.trim().replace(/^@/, "");
+
+  const send = () =>
+    invite.mutate(
+      { id: e.id, login: value || undefined },
+      {
+        onSuccess: (r) => toast.success(`Invited ${r.login}`, { description: `They can sign in with GitHub now. Let them know at ${e.email}.` }),
+        onError: (err) => toast.error("Couldn't invite them", { description: err.message }),
+      },
+    );
+
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3">
+      <Avatar src={githubAvatar(e.login ?? (value || null))} alt={e.login ?? e.email} size={28} className={e.status === "invited" && !e.joined ? "opacity-60" : undefined} />
+      <div className="min-w-0 flex-1">
+        <p className="flex flex-wrap items-baseline gap-x-2 text-[13.5px]">
+          <a href={`mailto:${e.email}`} className="truncate hover:underline">
+            {e.email}
+          </a>
+          {e.status === "invited" && e.login && <span className="font-mono text-[12px] text-muted">@{e.login}</span>}
+        </p>
+        {e.note && <p className="mt-0.5 line-clamp-2 text-[12.5px] text-ink-2">{e.note}</p>}
+        <p className="mt-0.5 text-[11.5px] text-muted">
+          {e.status === "invited" && e.invitedAt ? `invited ${ago(e.invitedAt)}` : `signed up ${ago(e.createdAt)}`}
+        </p>
+      </div>
+      {e.status === "waiting" ? (
+        <form
+          onSubmit={(ev) => {
+            ev.preventDefault();
+            send();
+          }}
+          className="flex items-center gap-2"
+        >
+          <input
+            value={login}
+            onChange={(ev) => setLogin(ev.target.value)}
+            placeholder="GitHub username"
+            aria-label={`GitHub username for ${e.email}`}
+            className="field h-8 w-36 rounded-lg bg-surface px-2.5 font-mono text-[12.5px] outline-none placeholder:font-sans placeholder:text-muted"
+            autoComplete="off"
+            spellCheck={false}
+          />
+          <Button type="submit" size="sm" variant="primary" loading={invite.isPending} disabled={!value}>
+            Invite
+          </Button>
+        </form>
+      ) : e.joined ? (
+        <Badge tone="ok">Joined</Badge>
+      ) : (
+        <Badge>Invited</Badge>
+      )}
+      <RemoveButton
+        label={`Remove ${e.email} from the waitlist`}
+        onConfirm={() => remove.mutate(e.id, { onError: (err) => toast.error("Couldn't remove it", { description: err.message }) })}
+      />
     </div>
   );
 }

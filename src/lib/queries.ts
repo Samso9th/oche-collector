@@ -27,6 +27,7 @@ import type {
   TokensResponse,
   UpdateRepoRequest,
   UpdateRepoResponse,
+  WaitlistResponse,
 } from "./api-types.ts";
 
 export const keys = {
@@ -37,6 +38,7 @@ export const keys = {
   events: (repo?: string) => ["events", repo ?? "all"] as const,
   installations: ["installations"] as const,
   members: ["members"] as const,
+  waitlist: ["waitlist"] as const,
   tokens: ["tokens"] as const,
   coolify: ["coolify-instances"] as const,
   deployments: (full: string) => ["deployments", full] as const,
@@ -210,6 +212,27 @@ export function useInvite() {
   return useMutation({
     mutationFn: (login: string) => api<{ ok: true }>("/v1/members", { method: "POST", body: { login } }),
     onSuccess: () => qc.invalidateQueries({ queryKey: keys.members }),
+  });
+}
+
+export const useWaitlist = () => useQuery({ queryKey: keys.waitlist, queryFn: () => api<WaitlistResponse>("/v1/waitlist") });
+
+export function useInviteFromWaitlist() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, login }: { id: number; login?: string }) => api<{ login: string }>(`/v1/waitlist/${id}/invite`, { method: "POST", body: { login } }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: keys.waitlist });
+      void qc.invalidateQueries({ queryKey: keys.members });
+    },
+  });
+}
+
+export function useRemoveFromWaitlist() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => api<{ ok: true }>(`/v1/waitlist/${id}`, { method: "DELETE" }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.waitlist }),
   });
 }
 

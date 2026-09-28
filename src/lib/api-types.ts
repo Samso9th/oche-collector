@@ -389,6 +389,20 @@ export type MembersResponse = {
   invites: { login: string; addedBy: string; createdAt: string }[];
 };
 
+/** GET /v1/waitlist (owner). POST /v1/waitlist/:id/invite { login? }. DELETE /v1/waitlist/:id */
+export type ApiWaitlistEntry = {
+  id: number;
+  email: string;
+  login: string | null;
+  note: string | null;
+  status: "waiting" | "invited";
+  createdAt: string;
+  invitedAt: string | null;
+  /** They've signed in since being invited. */
+  joined: boolean;
+};
+export type WaitlistResponse = { entries: ApiWaitlistEntry[] };
+
 /** GET /v1/tokens. POST /v1/tokens { name } → { token } shown once. DELETE /v1/tokens/:id */
 export type TokensResponse = {
   tokens: { id: number; name: string; prefix: string; createdAt: string; lastUsedAt: string | null }[];
