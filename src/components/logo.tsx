@@ -1,22 +1,45 @@
 import clsx from "clsx";
+import { useId } from "react";
 
 /**
- * Provisional mark: the O standing on the oche, the line you throw from.
- * Ring in ink, line in ember. Replace with the final mark once it's generated.
+ * The Oche mark: a bold O in horizontal bands, after Idoma striped cloth.
+ * Three ember bands for the three stages. The other bands take currentColor,
+ * so the mark flips with the theme.
  */
+const TOP = 1.5;
+const H = 21;
+const W = 19;
+const X = (24 - W) / 2;
+const R = 8.6;
+const K = R / 2.2;
+const OUTER = `M${X + R} ${TOP}H${X + W - R}C${X + W - K} ${TOP} ${X + W} ${TOP + K} ${X + W} ${TOP + R}V${TOP + H - R}C${X + W} ${TOP + H - K} ${X + W - K} ${TOP + H} ${X + W - R} ${TOP + H}H${X + R}C${X + K} ${TOP + H} ${X} ${TOP + H - K} ${X} ${TOP + H - R}V${TOP + R}C${X} ${TOP + K} ${X + K} ${TOP} ${X + R} ${TOP}Z`;
+const CY = TOP + H / 2;
+const COUNTER = `M12 ${CY - 5.9}A3.7 5.9 0 1 0 12 ${CY + 5.9}A3.7 5.9 0 1 0 12 ${CY - 5.9}Z`;
+const BANDS = 7;
+const BAND = H / BANDS;
+
 export function Mark({ size = 22, className }: { size?: number; className?: string }) {
+  const id = useId();
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" className={clsx("shrink-0", className)} aria-hidden>
-      <circle cx="12" cy="10.25" r="6.75" stroke="currentColor" strokeWidth="3" />
-      <rect x="2" y="19" width="20" height="3" rx="1.5" fill="var(--ember)" />
+    <svg width={size} height={size} viewBox="0 0 24 24" className={clsx("shrink-0", className)} aria-hidden>
+      <defs>
+        <clipPath id={id}>
+          <path clipRule="evenodd" d={`${OUTER} ${COUNTER}`} />
+        </clipPath>
+      </defs>
+      <g clipPath={`url(#${id})`}>
+        {Array.from({ length: BANDS }, (_, i) => (
+          <rect key={i} x="0" y={TOP + i * BAND} width="24" height={BAND + 0.02} fill={i % 2 ? "var(--ember)" : "currentColor"} />
+        ))}
+      </g>
     </svg>
   );
 }
 
 export function Wordmark({ className }: { className?: string }) {
   return (
-    <span className={clsx("inline-flex items-center gap-2 text-[15px] font-semibold tracking-[-0.02em]", className)}>
-      <Mark />
+    <span className={clsx("inline-flex items-center gap-1.5 text-[16px] font-semibold tracking-[-0.03em]", className)}>
+      <Mark size={20} />
       oche
     </span>
   );
