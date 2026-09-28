@@ -1,6 +1,6 @@
 import { Menu } from "@base-ui/react/menu";
 import clsx from "clsx";
-import { Check, CircleCheck, CircleX, Copy, ExternalLink, Loader2, MoreHorizontal, Plus, RotateCw, Sparkles, SquareTerminal, Unlink } from "lucide-react";
+import { Check, CircleCheck, CircleX, Copy, ExternalLink, History, Loader2, MoreHorizontal, Plus, RotateCw, Sparkles, SquareTerminal, Unlink } from "lucide-react";
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { toast } from "sonner";
 import type { ApiCoolifyApp, ApiDeployment, ApiRepo, Stage } from "../lib/api-types.ts";
@@ -14,6 +14,8 @@ import {
   useLinkCoolify,
   useMe,
   useRedeploy,
+  useRollback,
+  useRollbackOptions,
   useUnlinkCoolify,
 } from "../lib/queries.ts";
 import { ago } from "../lib/time.ts";
@@ -372,9 +374,11 @@ function AppRow({ repo, app, onLogs }: { repo: ApiRepo; app: ApiCoolifyApp; onLo
       },
     );
   const running = app.state === "running";
+  const [rollingBack, setRollingBack] = useState(false);
 
   return (
     <li className="px-4 py-3">
+      {rollingBack && <RollbackDialog repo={repo} app={app} onClose={() => setRollingBack(false)} />}
       <div className="flex items-center gap-2">
         <DeployIcon status={last?.status} />
         <span className="min-w-0 flex-1 truncate text-[13.5px] font-medium">{app.name}</span>
@@ -414,6 +418,10 @@ function AppRow({ repo, app, onLogs }: { repo: ApiRepo; app: ApiCoolifyApp; onLo
                 <Menu.Item onClick={() => run(true)} className="block rounded-lg px-2.5 py-1.5 text-[13px] outline-none select-none data-highlighted:bg-surface-2">
                   Rebuild without cache
                 </Menu.Item>
+                <Menu.Separator className="mx-1 my-1 h-px bg-line" />
+                <Menu.Item onClick={() => setRollingBack(true)} className="flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-[13px] outline-none select-none data-highlighted:bg-surface-2">
+                  <History className="size-3.5 text-muted" /> Roll back…
+                </Menu.Item>
               </Menu.Popup>
             </Menu.Positioner>
           </Menu.Portal>
@@ -441,6 +449,84 @@ function FailureBanner({ repo, app, deployment, onExplain }: { repo: ApiRepo; ap
         </Button>
       </div>
     </div>
+  );
+}
+
+/* ---------------- rollback ---------------- */
+
+function RollbackDialog({ repo, app, onClose }: { repo: ApiRepo; app: ApiCoolifyApp; onClose: () => void }) {
+  const q = useRollbackOptions(repo.fullName, app.uuid);
+  const rollback = useRollback(repo.fullName);
+  const [picked, setPicked] = useState<string | null>(null);
+  const images = q.data?.images ?? [];
+  const lastGood = images.find((i) => !i.isCurrent);
+
+  useEffect(() => {
+    if (lastGood && picked === null) setPicked(lastGood.tag);
+  }, [lastGood, picked]);
+
+  const go = () =>
+    picked &&
+    rollback.mutate(
+      { app: app.uuid, commit: picked },
+      {
+        onSuccess: () => {
+          toast.success(`Rolling ${app.name} back to ${picked.slice(0, 7)}`, { description: "Follow it in the app's logs." });
+          onClose();
+        },
+        onError: (e) => toast.error("Couldn't roll back", { description: e.message }),
+      },
+    );
+
+  return (
+    <Dialog
+      open
+      onOpenChange={(o) => !o && onClose()}
+      title={`Roll back ${app.name}`}
+      description="Runs an older image Coolify still has, with today's settings and env vars. It doesn't undo database migrations or restore data."
+    >
+      {q.isLoading ? (
+        <Skeleton className="h-28" />
+      ) : q.isError ? (
+        <p className="rounded-lg bg-danger/10 px-3 py-2.5 text-[13px] text-danger">{q.error.message}</p>
+      ) : images.length < 2 ? (
+        <p className="text-[13px] text-muted">Coolify has no older image for {app.name} to go back to. Coolify keeps a set number of images per app; raise it under the app's Advanced settings.</p>
+      ) : (
+        <ul className="max-h-72 space-y-1 overflow-y-auto">
+          {images.map((i) => (
+            <li key={i.tag}>
+              <label
+                className={clsx(
+                  "flex cursor-pointer items-start gap-2.5 rounded-lg px-3 py-2 text-[13px]",
+                  picked === i.tag ? "bg-surface-2" : "hover:bg-surface-2",
+                  i.isCurrent && "cursor-default opacity-60",
+                )}
+              >
+                <input type="radio" name="image" disabled={i.isCurrent} checked={picked === i.tag} onChange={() => setPicked(i.tag)} className="mt-1 accent-[var(--ember)]" />
+                <span className="min-w-0 flex-1">
+                  <span className="flex items-center gap-2">
+                    <span className="font-mono text-[12.5px]">{i.tag.slice(0, 7)}</span>
+                    {i.isCurrent && <Badge tone="ok">Running now</Badge>}
+                    {!i.isCurrent && i === lastGood && <Badge>Previous</Badge>}
+                  </span>
+                  <span className="block truncate text-[12.5px] text-muted">
+                    {i.commitMessage?.split("\n")[0] ?? "No deployment record"} · built {ago(i.createdAt)}
+                  </span>
+                </span>
+              </label>
+            </li>
+          ))}
+        </ul>
+      )}
+      <div className="mt-5 flex justify-end gap-2">
+        <Button variant="ghost" onClick={onClose}>
+          Cancel
+        </Button>
+        <Button variant="primary" disabled={!picked || images.length < 2} loading={rollback.isPending} onClick={go}>
+          Roll back to {picked?.slice(0, 7) ?? "…"}
+        </Button>
+      </div>
+    </Dialog>
   );
 }
 

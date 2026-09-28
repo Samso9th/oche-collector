@@ -19,9 +19,13 @@ import type {
   RepoResponse,
   ReposResponse,
   SetupStatusResponse,
+  ApiShipRun,
+  EnvComparison,
+  Preflight,
+  RollbackOptions,
   ShipRequest,
-  ShipResponse,
   TokensResponse,
+  UpdateRepoRequest,
   UpdateRepoResponse,
 } from "./api-types.ts";
 
@@ -82,11 +86,70 @@ export function usePromote(full: string) {
   });
 }
 
-export function useShip(full: string) {
-  const invalidate = useInvalidateRepo();
+export function useStartShip(full: string) {
+  const qc = useQueryClient();
   return useMutation({
-    mutationFn: (req: ShipRequest) => api<ShipResponse>(`/v1/repos/${full}/ship`, { method: "POST", body: req }),
-    onSettled: () => invalidate(full),
+    mutationFn: (req: ShipRequest) => api<{ run: ApiShipRun }>(`/v1/repos/${full}/ship`, { method: "POST", body: req }),
+    onSuccess: ({ run }) => {
+      qc.setQueryData(["ship-run", run.id], { run });
+      void qc.invalidateQueries({ queryKey: ["ship-runs", full] });
+    },
+  });
+}
+
+/** Follows a run until it finishes, then refreshes everything it touched. */
+export function useShipRun(id: number | null, full: string) {
+  const invalidate = useInvalidateRepo();
+  return useQuery({
+    queryKey: ["ship-run", id],
+    queryFn: async () => {
+      const r = await api<{ run: ApiShipRun }>(`/v1/ship-runs/${id}`);
+      invalidate(full);
+      return r;
+    },
+    enabled: id !== null,
+    refetchInterval: (q) => (q.state.data?.run.status === "running" ? 2_500 : false),
+  });
+}
+
+export const useRecentRuns = (full: string) =>
+  useQuery({
+    queryKey: ["ship-runs", full],
+    queryFn: () => api<{ runs: ApiShipRun[] }>(`/v1/repos/${full}/ship-runs?limit=3`),
+    refetchInterval: (q) => (q.state.data?.runs?.[0]?.status === "running" ? 4_000 : 30_000),
+  });
+
+export function useCancelRun() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => api<{ run: ApiShipRun }>(`/v1/ship-runs/${id}/cancel`, { method: "POST" }),
+    onSuccess: ({ run }) => qc.setQueryData(["ship-run", run.id], { run }),
+  });
+}
+
+export const usePreflight = (full: string, to: "staging" | "prod", enabled: boolean) =>
+  useQuery({ queryKey: ["preflight", full, to], queryFn: () => api<Preflight>(`/v1/repos/${full}/preflight?to=${to}`), enabled, staleTime: 15_000 });
+
+export const useEnvs = (full: string, enabled: boolean) =>
+  useQuery({ queryKey: ["envs", full], queryFn: () => api<{ groups: EnvComparison[] }>(`/v1/repos/${full}/envs`), enabled, staleTime: 30_000, retry: false });
+
+export const useRollbackOptions = (full: string, app: string | null) =>
+  useQuery({
+    queryKey: ["rollback", full, app],
+    queryFn: () => api<RollbackOptions>(`/v1/repos/${full}/apps/${app}/rollback`),
+    enabled: app !== null,
+    staleTime: 0,
+  });
+
+export function useRollback(full: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ app, commit }: { app: string; commit: string }) =>
+      api<{ deploymentUuid: string | null }>(`/v1/repos/${full}/apps/${app}/rollback`, { method: "POST", body: { commit } }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: keys.deployments(full) });
+      void qc.invalidateQueries({ queryKey: ["events"] });
+    },
   });
 }
 
@@ -112,12 +175,18 @@ export function useUpdateRepo(full: string) {
   const invalidate = useInvalidateRepo();
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (patch: { mode?: Mode; requiredApprovals?: number }) =>
+    mutationFn: (patch: UpdateRepoRequest) =>
       api<UpdateRepoResponse>(`/v1/repos/${full}`, { method: "PATCH", body: patch }),
     onMutate: async (patch) => {
       await qc.cancelQueries({ queryKey: keys.repo(full) });
       const prev = qc.getQueryData<RepoResponse>(keys.repo(full));
-      if (prev) qc.setQueryData<RepoResponse>(keys.repo(full), { ...prev, repo: { ...prev.repo, ...patch } });
+      if (prev) {
+        const { branches, ...rest } = patch;
+        qc.setQueryData<RepoResponse>(keys.repo(full), {
+          ...prev,
+          repo: { ...prev.repo, ...rest, ...(branches && prev.repo.branches ? { branches: { ...prev.repo.branches, ...branches } } : {}) },
+        });
+      }
       return { prev };
     },
     onError: (_e, _p, ctx) => ctx?.prev && qc.setQueryData(keys.repo(full), ctx.prev),
@@ -187,6 +256,15 @@ export function useUpdateCoolify() {
   return useMutation({
     mutationFn: ({ id, ...input }: { id: number; name?: string; token?: string; cfAccessClientId?: string | null; cfAccessClientSecret?: string }) =>
       api<{ instance: ApiCoolifyInstance }>(`/v1/coolify/instances/${id}`, { method: "PATCH", body: input }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.coolify }),
+  });
+}
+
+export function useEnableAlerts() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, replace }: { id: number; replace?: boolean }) =>
+      api<{ instance: ApiCoolifyInstance }>(`/v1/coolify/instances/${id}/alerts`, { method: "POST", body: { replace: replace ?? false } }),
     onSuccess: () => qc.invalidateQueries({ queryKey: keys.coolify }),
   });
 }

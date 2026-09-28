@@ -14,6 +14,7 @@ import {
   Flag,
   GitBranch,
   GitMerge,
+  History,
   RefreshCw,
   SlidersHorizontal,
   Undo2,
@@ -41,6 +42,8 @@ const LOOK: Record<EventType, { icon: LucideIcon; tone: string }> = {
   "deploy-triggered": { icon: Rocket, tone: "text-ink-2" },
   "app-stopped": { icon: Power, tone: "text-danger" },
   "coolify-setup": { icon: Server, tone: "text-ember" },
+  "rolled-back": { icon: History, tone: "text-staging" },
+  "settings-changed": { icon: SlidersHorizontal, tone: "text-ink-2" },
 };
 
 function dayLabel(iso: string) {

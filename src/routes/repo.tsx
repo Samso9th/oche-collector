@@ -5,8 +5,10 @@ import { EventFeed } from "../components/events.tsx";
 import { ModeSwitch } from "../components/mode.tsx";
 import { OnboardDialog } from "../components/onboard.tsx";
 import { Pipeline } from "../components/pipeline.tsx";
-import { OpenWorkList, ShipButton } from "../components/ship.tsx";
+import { ActiveShip, OpenWorkList, ShipButton } from "../components/ship.tsx";
 import { DeploymentsSection } from "../components/coolify.tsx";
+import { EnvCompare } from "../components/envs.tsx";
+import { RepoSettings } from "../components/repo-settings.tsx";
 import { BranchName, Button, Card, Empty, Skeleton } from "../components/ui.tsx";
 import type { ApiRepo } from "../lib/api-types.ts";
 import { ApiError } from "../lib/api.ts";
@@ -76,6 +78,8 @@ export function RepoPage() {
             </div>
           )}
 
+          <ActiveShip repo={repo} status={status} />
+
           <section aria-labelledby="pipeline" className="space-y-3">
             <div className="flex items-center justify-between gap-3">
               <h2 id="pipeline" className="text-[13px] font-medium text-muted">
@@ -88,6 +92,8 @@ export function RepoPage() {
 
           <DeploymentsSection repo={repo} />
 
+          <EnvCompare repo={repo} />
+
           <OpenWorkList repo={repo} status={status} />
 
           <div className="grid gap-6 lg:grid-cols-[1fr_300px]">
@@ -97,7 +103,10 @@ export function RepoPage() {
                 <EventFeed events={q.data?.events} loading={q.isLoading} />
               </div>
             </Card>
-            <Rules repo={repo} />
+            <div className="space-y-6">
+              <RepoSettings repo={repo} canEdit={isOwner} />
+              <Rules repo={repo} />
+            </div>
           </div>
         </>
       )}

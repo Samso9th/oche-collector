@@ -8,6 +8,7 @@ import { API_URL } from "../lib/api.ts";
 import { ago } from "../lib/time.ts";
 import {
   useCheckCoolify,
+  useEnableAlerts,
   useCoolifyInstances,
   useCreateToken,
   useRemoveCoolify,
@@ -159,15 +160,7 @@ function CoolifyInstances() {
               </span>
             </p>
             {i.lastError && <p className="mt-1.5 line-clamp-3 rounded-lg bg-danger/8 px-3 py-2 text-[12.5px] text-danger">{i.lastError}</p>}
-            <div className="mt-2.5 rounded-lg bg-surface-2 px-3 py-2.5">
-              <p className="text-[12px] text-muted">
-                For instant deploy alerts, paste this into that Coolify under <span className="text-ink-2">Notifications → Webhook</span> and turn on deployment events:
-              </p>
-              <div className="mt-1.5 flex items-start gap-2">
-                <code className="min-w-0 flex-1 font-mono text-[12px] break-all">{i.webhookUrl}</code>
-                <CopyButton text={i.webhookUrl} label="Copy" />
-              </div>
-            </div>
+            <Alerts instance={i} />
           </div>
         ))}
         {q.data?.instances.length === 0 && <p className="px-4 py-6 text-center text-[13px] text-muted">No Coolify connected yet.</p>}
@@ -175,6 +168,57 @@ function CoolifyInstances() {
       <AddCoolifyDialog open={adding} onOpenChange={setAdding} />
       {editing && <EditCoolifyDialog instance={editing} onClose={() => setEditing(null)} />}
     </Section>
+  );
+}
+
+/** Coolify's team webhook, which Oche can point at itself. */
+function Alerts({ instance: i }: { instance: ApiCoolifyInstance }) {
+  const enable = useEnableAlerts();
+  const [manual, setManual] = useState(false);
+  const turnOn = (replace: boolean) =>
+    enable.mutate(
+      { id: i.id, replace },
+      {
+        onSuccess: () => toast.success(`Deploy alerts on for ${i.name}`),
+        onError: (e) => toast.error("Couldn't set the webhook", { description: e.message }),
+      },
+    );
+  return (
+    <div className="mt-2.5 rounded-lg bg-surface-2 px-3 py-2.5">
+      <div className="flex flex-wrap items-center gap-2 text-[12.5px]">
+        <span className="font-medium text-ink-2">Deploy alerts</span>
+        {i.alerts === "on" ? (
+          <Badge tone="ok">On</Badge>
+        ) : i.alerts === "other" ? (
+          <Badge tone="warn">Webhook used elsewhere</Badge>
+        ) : (
+          <Badge>Off</Badge>
+        )}
+        <span className="text-muted">
+          {i.alerts === "on"
+            ? "Coolify tells Oche the moment a deploy finishes or fails."
+            : i.alerts === "other"
+              ? "This Coolify's webhook sends somewhere else. Coolify has one webhook per team."
+              : "Oche can set Coolify's webhook for you."}
+        </span>
+        <span className="ml-auto flex gap-1.5">
+          {i.alerts !== "on" && (
+            <Button size="sm" variant={i.alerts === "other" ? "secondary" : "primary"} loading={enable.isPending} onClick={() => turnOn(i.alerts === "other")}>
+              {i.alerts === "other" ? "Replace with Oche" : "Turn on"}
+            </Button>
+          )}
+          <Button size="sm" variant="ghost" onClick={() => setManual((m) => !m)}>
+            {manual ? "Hide URL" : "URL"}
+          </Button>
+        </span>
+      </div>
+      {manual && (
+        <div className="mt-2 flex items-start gap-2">
+          <code className="min-w-0 flex-1 font-mono text-[12px] break-all">{i.webhookUrl}</code>
+          <CopyButton text={i.webhookUrl} label="Copy" />
+        </div>
+      )}
+    </div>
   );
 }
 

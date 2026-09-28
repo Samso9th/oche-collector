@@ -1,88 +1,215 @@
-import { ArrowRight, GitPullRequest, Rocket } from "lucide-react";
-import { useState } from "react";
+import clsx from "clsx";
+import { AlertTriangle, ArrowRight, Check, CircleX, ExternalLink, GitPullRequest, Loader2, Minus, Rocket } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import type { ApiRepo, OpenWork, RepoStatus, ShipResponse } from "../lib/api-types.ts";
-import { useShip } from "../lib/queries.ts";
+import type { ApiRepo, ApiShipRun, OpenWork, RepoStatus, RunStep, ShipRequest } from "../lib/api-types.ts";
+import { useCancelRun, usePreflight, useRecentRuns, useShipRun, useStartShip } from "../lib/queries.ts";
+import { ago } from "../lib/time.ts";
 import { Avatar, Badge, BranchName, Button, Card, Dialog, githubAvatar } from "./ui.tsx";
 
-type Hop = { head: string; base: string; stage: "dev" | "staging" | "prod"; pending: number | null; note?: string };
+const MERGE_WORDS = { merge: "merge the PR", squash: "squash-merge the PR", rebase: "rebase-merge the PR" } as const;
 
-function hops(repo: ApiRepo, status: RepoStatus | null | undefined, from?: string): Hop[] {
+/** The same plan the server makes (server/src/services/ship-runs.ts planSteps), for showing before anything runs. */
+function plannedSteps(repo: ApiRepo, status: RepoStatus | null | undefined, req: ShipRequest) {
   const b = repo.branches!;
-  const list: Hop[] = [];
-  if (from && from !== b.dev) list.push({ head: from, base: b.dev, stage: "dev", pending: null, note: "squash-merge the PR" });
-  list.push({ head: b.dev, base: b.staging, stage: "staging", pending: from && from !== b.dev ? null : (status?.pending.staging ?? null) });
-  list.push({ head: b.staging, base: b.prod, stage: "prod", pending: from && from !== b.dev ? null : (status?.pending.prod ?? null) });
-  return list;
+  const fromWork = req.from && req.from !== b.dev;
+  const steps: { kind: "merge" | "wait"; label: string; head?: string; base?: string; note?: string }[] = [];
+  if (fromWork) steps.push({ kind: "merge", head: req.from, base: b.dev, label: `${req.from} → ${b.dev}`, note: MERGE_WORDS[repo.workMergeMethod] });
+  steps.push({ kind: "merge", head: b.dev, base: b.staging, label: `${b.dev} → ${b.staging}`, note: fromWork ? undefined : commits(status?.pending.staging) });
+  if (repo.coolifyLinked && repo.gateOnStaging) steps.push({ kind: "wait", label: "Wait for staging to deploy and pass its health check" });
+  steps.push({ kind: "merge", head: b.staging, base: b.prod, label: `${b.staging} → ${b.prod}`, note: fromWork ? undefined : commits(status?.pending.prod) });
+  if (repo.coolifyLinked) steps.push({ kind: "wait", label: "Wait for production to deploy and pass its health check" });
+  return steps;
 }
 
-function summarize(r: ShipResponse) {
-  const last = r.steps.at(-1);
-  if (r.completed) {
-    const merged = r.steps.filter((s) => s.status === "merged").length;
-    return { ok: true, title: merged ? "Shipped to production" : "Production already has everything", body: merged ? "Coolify deploys each branch as it lands." : undefined };
-  }
-  if (!last) return { ok: false, title: "Nothing ran" };
-  if (last.status === "waiting-review") return { ok: false, title: `Stopped at ${last.label}`, body: `Waiting on review: ${last.approval.approvals} of ${last.approval.required} approvals.`, url: last.pr.url };
-  if (last.status === "conflict") return { ok: false, title: `Stopped at ${last.label}`, body: "It has merge conflicts. Resolve them on GitHub, then ship again.", url: last.pr.url };
-  if (last.status === "blocked") return { ok: false, title: `Stopped at ${last.label}`, body: last.reason };
-  return { ok: false, title: `Stopped at ${last.label}` };
-}
+const commits = (n: number | undefined) => (n === undefined ? undefined : n === 0 ? "up to date" : `${n} commit${n === 1 ? "" : "s"}`);
 
-/** One confirmation, then every hop to production. Stops at the first one that can't finish. */
-export function ShipDialog({ repo, status, from, open, onOpenChange }: { repo: ApiRepo; status: RepoStatus | null | undefined; from?: string; open: boolean; onOpenChange: (o: boolean) => void }) {
-  const ship = useShip(repo.fullName);
-  const steps = hops(repo, status, from);
-  const strict = repo.mode === "strict";
+/** One confirmation, then every hop to production. Stays open to follow the run. */
+export function ShipDialog({
+  repo,
+  status,
+  from,
+  runId: initialRun = null,
+  open,
+  onOpenChange,
+}: {
+  repo: ApiRepo;
+  status: RepoStatus | null | undefined;
+  from?: string;
+  runId?: number | null;
+  open: boolean;
+  onOpenChange: (o: boolean) => void;
+}) {
+  const start = useStartShip(repo.fullName);
+  const [runId, setRunId] = useState<number | null>(initialRun);
+  const run = useShipRun(runId, repo.fullName);
+  const preflight = usePreflight(repo.fullName, "prod", open && runId === null && repo.coolifyLinked);
+  const cancel = useCancelRun();
+  const announced = useRef<number | null>(null);
+  const current = run.data?.run;
 
-  const run = () => {
-    onOpenChange(false);
-    const done = ship.mutateAsync({ from, to: "prod" }).then((r) => {
-      const s = summarize(r);
-      if (!s.ok) throw Object.assign(new Error(s.title), { detail: s });
-      return s;
-    });
-    toast.promise(done, {
-      loading: `Shipping ${from ?? repo.branches!.dev} to production…`,
-      success: (s) => ({ message: s.title, description: s.body }),
-      error: (e: Error & { detail?: ReturnType<typeof summarize> }) => {
-        const d = e.detail;
-        if (!d) return { message: "Ship failed", description: e.message };
-        return { message: d.title, description: d.body, action: d.url ? { label: "Open PR", onClick: () => window.open(d.url, "_blank") } : undefined };
+  useEffect(() => {
+    if (!current || current.status === "running" || announced.current === current.id) return;
+    announced.current = current.id;
+    const failed = current.steps.find((s) => s.status === "failed" || s.status === "waiting-review");
+    if (current.status === "succeeded") toast.success(`Shipped ${repo.name} to production`, { description: repo.coolifyLinked ? "Deployed and healthy." : undefined });
+    else if (current.status === "cancelled") toast(`Ship cancelled`);
+    else toast.error(`Stopped at ${failed?.label ?? "a step"}`, { description: failed?.detail });
+  }, [current, repo.name, repo.coolifyLinked]);
+
+  const go = () =>
+    start.mutate(
+      { from, to: "prod" },
+      {
+        onSuccess: ({ run }) => setRunId(run.id),
+        onError: (e) => toast.error("Couldn't start the ship", { description: e.message }),
       },
-    });
-  };
+    );
+
+  const pf = preflight.data;
+  const warnings = pf
+    ? [
+        ...pf.envIssues.flatMap((i) => [
+          ...(i.missing.length ? [`${i.app} in production is missing ${list(i.missing)}.`] : []),
+          ...(i.shared.length ? [`${i.app} uses the same ${list(i.shared)} in staging and production.`] : []),
+        ]),
+        ...(pf.below?.unhealthy.length ? [`Staging isn't healthy right now: ${pf.below.unhealthy.map((u) => u.name).join(", ")}.`] : []),
+      ]
+    : [];
 
   return (
     <Dialog
       open={open}
       onOpenChange={onOpenChange}
-      title={`Ship ${from ?? repo.branches!.dev} to production?`}
-      description={strict ? `Strict mode: Oche stops at the first step that doesn't have ${repo.requiredApprovals} approval${repo.requiredApprovals === 1 ? "" : "s"} yet.` : "Oche runs these in order and stops if one can't merge."}
+      size="lg"
+      title={current ? shipTitle(current, repo) : `Ship ${from ?? repo.branches!.dev} to production?`}
+      description={
+        current
+          ? `Started by ${current.actor} ${ago(current.createdAt)}. You can close this; it keeps running.`
+          : repo.mode === "strict"
+            ? `Strict mode: Oche stops at the first step without ${repo.requiredApprovals} approval${repo.requiredApprovals === 1 ? "" : "s"}.`
+            : repo.coolifyLinked && repo.gateOnStaging
+              ? "Production only moves once staging is deployed and healthy."
+              : "Oche runs these in order and stops if one can't finish."
+      }
     >
-      <ol className="space-y-2">
-        {steps.map((h, i) => (
-          <li key={i} className="flex items-center gap-2 rounded-xl bg-surface-2 px-3 py-2.5 text-[13px]">
-            <span className="grid size-5 shrink-0 place-items-center rounded-full bg-surface text-[11px] font-medium text-muted shadow-card">{i + 1}</span>
-            <BranchName name={h.head} stage={h.stage === "dev" ? undefined : h.stage === "staging" ? "dev" : "staging"} />
-            <ArrowRight className="size-3.5 text-muted" aria-hidden />
-            <BranchName name={h.base} stage={h.stage} />
-            <span className="ml-auto text-[12px] text-muted">
-              {h.note ?? (h.pending === null ? "" : h.pending === 0 ? "up to date" : `${h.pending} commit${h.pending === 1 ? "" : "s"}`)}
-            </span>
-          </li>
-        ))}
-      </ol>
-      <p className="mt-3 text-[12.5px] text-muted">Coolify deploys {repo.branches!.staging} and {repo.branches!.prod} as each merge lands.</p>
+      {current ? (
+        <RunSteps run={current} />
+      ) : (
+        <>
+          <ol className="space-y-1.5">
+            {plannedSteps(repo, status, { from, to: "prod" }).map((s, i) => (
+              <li key={i} className="flex items-center gap-2 rounded-xl bg-surface-2 px-3 py-2.5 text-[13px]">
+                <span className="grid size-5 shrink-0 place-items-center rounded-full bg-surface text-[11px] font-medium text-muted shadow-card">{i + 1}</span>
+                {s.kind === "merge" ? (
+                  <>
+                    <BranchName name={s.head!} />
+                    <ArrowRight className="size-3.5 text-muted" aria-hidden />
+                    <BranchName name={s.base!} />
+                  </>
+                ) : (
+                  <span className="text-ink-2">{s.label}</span>
+                )}
+                {s.note && <span className="ml-auto text-[12px] text-muted">{s.note}</span>}
+              </li>
+            ))}
+          </ol>
+          {preflight.isLoading && repo.coolifyLinked && (
+            <p className="mt-3 flex items-center gap-2 text-[12.5px] text-muted">
+              <Loader2 className="size-3 animate-spin" /> Checking environment variables and staging…
+            </p>
+          )}
+          {warnings.length > 0 && (
+            <div className="mt-3 rounded-lg bg-staging/12 px-3 py-2.5 text-[12.5px] text-ink-2">
+              <p className="flex items-center gap-1.5 font-medium">
+                <AlertTriangle className="size-3.5 text-staging" /> Before you ship
+              </p>
+              <ul className="mt-1 list-disc space-y-0.5 pl-5">
+                {warnings.map((w) => (
+                  <li key={w}>{w}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </>
+      )}
       <div className="mt-5 flex justify-end gap-2">
-        <Button variant="ghost" onClick={() => onOpenChange(false)}>
-          Cancel
-        </Button>
-        <Button variant="primary" onClick={run} autoFocus>
-          <Rocket className="size-3.5" /> Ship to production
-        </Button>
+        {current?.status === "running" ? (
+          <>
+            <Button variant="ghost" loading={cancel.isPending} onClick={() => cancel.mutate(current.id)}>
+              Cancel ship
+            </Button>
+            <Button onClick={() => onOpenChange(false)}>Hide</Button>
+          </>
+        ) : current ? (
+          <Button variant="primary" onClick={() => onOpenChange(false)}>
+            Done
+          </Button>
+        ) : (
+          <>
+            <Button variant="ghost" onClick={() => onOpenChange(false)}>
+              Cancel
+            </Button>
+            <Button variant="primary" onClick={go} loading={start.isPending} autoFocus>
+              <Rocket className="size-3.5" /> {warnings.length ? "Ship anyway" : "Ship to production"}
+            </Button>
+          </>
+        )}
       </div>
     </Dialog>
+  );
+}
+
+const list = (keys: string[]) => (keys.length <= 3 ? keys.join(", ") : `${keys.slice(0, 3).join(", ")} and ${keys.length - 3} more`);
+
+function shipTitle(run: ApiShipRun, repo: ApiRepo) {
+  const what = `${run.request.from ?? repo.branches!.dev} → production`;
+  return { running: `Shipping ${what}`, succeeded: `Shipped ${what}`, failed: `Ship stopped`, stopped: `Waiting on review`, cancelled: `Ship cancelled` }[run.status];
+}
+
+function StepIcon({ status }: { status: RunStep["status"] }) {
+  if (status === "running") return <Loader2 className="size-3.5 animate-spin text-staging" />;
+  if (status === "done") return <Check className="size-3.5 text-prod" />;
+  if (status === "failed") return <CircleX className="size-3.5 text-danger" />;
+  if (status === "waiting-review") return <AlertTriangle className="size-3.5 text-staging" />;
+  if (status === "skipped") return <Minus className="size-3.5 text-muted" />;
+  return <span className="block size-3.5 rounded-full border border-line-strong" />;
+}
+
+const APP_TONE = { waiting: "neutral", building: "warn", healthy: "ok", failed: "danger", unhealthy: "danger" } as const;
+const APP_WORD = { waiting: "waiting", building: "building", healthy: "healthy", failed: "failed", unhealthy: "not healthy" } as const;
+
+export function RunSteps({ run }: { run: ApiShipRun }) {
+  return (
+    <ol className="space-y-1.5">
+      {run.steps.map((s) => (
+        <li key={s.id} className={clsx("rounded-xl px-3 py-2.5 text-[13px]", s.status === "failed" ? "bg-danger/8" : "bg-surface-2")}>
+          <div className="flex items-center gap-2">
+            <StepIcon status={s.status} />
+            <span className={clsx(s.status === "pending" && "text-muted", s.status === "skipped" && "text-muted")}>
+              {s.kind === "wait" ? (s.stage === "prod" ? "Production deploys and is healthy" : "Staging deploys and is healthy") : s.label}
+            </span>
+            {s.pr && (
+              <a href={s.pr.url} target="_blank" rel="noreferrer" className="ml-auto inline-flex items-center gap-1 text-[12px] text-muted hover:text-ink">
+                #{s.pr.number} <ExternalLink className="size-3" />
+              </a>
+            )}
+          </div>
+          {s.apps && s.apps.length > 0 && (
+            <div className="mt-2 flex flex-wrap gap-1.5 pl-5.5">
+              {s.apps.map((a) => (
+                <Badge key={a.uuid} tone={APP_TONE[a.state]}>
+                  {a.state === "building" && <Loader2 className="size-3 animate-spin" />}
+                  {a.name} {APP_WORD[a.state]}
+                </Badge>
+              ))}
+            </div>
+          )}
+          {s.detail && s.kind === "merge" && <p className="mt-1 pl-5.5 text-[12px] text-muted">{s.detail}</p>}
+          {s.detail && s.kind === "wait" && s.status !== "running" && !s.apps?.length && <p className="mt-1 pl-5.5 text-[12px] text-muted">{s.detail}</p>}
+        </li>
+      ))}
+    </ol>
   );
 }
 
@@ -95,6 +222,31 @@ export function ShipButton({ repo, status, disabled }: { repo: ApiRepo; status: 
         <Rocket className="size-3.5" /> Ship to production
       </Button>
       {open && <ShipDialog repo={repo} status={status} open onOpenChange={setOpen} />}
+    </>
+  );
+}
+
+/** A ship in progress on this repo, shown above the pipeline so it's never lost after closing the dialog. */
+export function ActiveShip({ repo, status }: { repo: ApiRepo; status: RepoStatus | null | undefined }) {
+  const runs = useRecentRuns(repo.fullName);
+  const [open, setOpen] = useState(false);
+  const run = runs.data?.runs?.[0];
+  if (!run || run.status !== "running") return null;
+  const step = run.steps.find((s) => s.status === "running") ?? run.steps.find((s) => s.status === "pending");
+  return (
+    <>
+      <button
+        onClick={() => setOpen(true)}
+        className="pressable flex w-full items-center gap-3 rounded-xl bg-staging/12 px-4 py-3 text-left text-[13px]"
+      >
+        <Loader2 className="size-4 shrink-0 animate-spin text-staging" />
+        <span className="min-w-0 flex-1">
+          <span className="font-medium">Shipping to production.</span>{" "}
+          <span className="text-ink-2">{step ? (step.kind === "wait" ? step.detail || step.label : step.label) : "Finishing up"}</span>
+        </span>
+        <span className="text-[12.5px] font-medium text-ink-2">Follow</span>
+      </button>
+      {open && <ShipDialog repo={repo} status={status} runId={run.id} open onOpenChange={setOpen} />}
     </>
   );
 }
@@ -133,4 +285,3 @@ export function OpenWorkList({ repo, status }: { repo: ApiRepo; status: RepoStat
     </Card>
   );
 }
-

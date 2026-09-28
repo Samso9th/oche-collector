@@ -56,7 +56,9 @@ export type EventType =
   | "deploy-failed"
   | "deploy-triggered"
   | "app-stopped"
-  | "coolify-setup";
+  | "coolify-setup"
+  | "rolled-back"
+  | "settings-changed";
 
 export interface OcheEvent {
   type: EventType;
@@ -144,6 +146,11 @@ export interface ApiRepo {
   requiredApprovals: number;
   branches: Branches | null;
   htmlUrl: string;
+  /** How work-branch PRs land in dev. */
+  workMergeMethod: "merge" | "squash" | "rebase";
+  /** Production waits for staging to deploy healthy on Coolify. */
+  gateOnStaging: boolean;
+  coolifyLinked: boolean;
 }
 
 export interface ApiEvent {
@@ -178,7 +185,13 @@ export type PromoteRequest = { to: Promotion };
 export type PromoteResponse = PromoteResult extends infer R ? (R extends unknown ? Omit<R, "events"> : never) : never;
 
 /** PATCH /v1/repos/:owner/:repo  body: { mode?, requiredApprovals? } */
-export type UpdateRepoRequest = { mode?: Mode; requiredApprovals?: number };
+export type UpdateRepoRequest = {
+  mode?: Mode;
+  requiredApprovals?: number;
+  workMergeMethod?: "merge" | "squash" | "rebase";
+  gateOnStaging?: boolean;
+  branches?: Partial<Branches>;
+};
 export type UpdateRepoResponse = { repo: ApiRepo };
 
 /** GET /v1/events?repo=owner/name&limit=50 */
@@ -196,9 +209,60 @@ export interface ShipRequest {
   direct?: boolean;
 }
 
-export type ShipStep = { label: string; head: string; base: string } & PromoteResponse;
+/* ---- ship runs (mirrors server/src/services/ship-runs.ts) ---- */
 
-export type ShipResponse = { steps: ShipStep[]; completed: boolean };
+export type StepStatus = "pending" | "running" | "done" | "skipped" | "waiting-review" | "failed";
+
+export interface RunStep {
+  id: string;
+  kind: "merge" | "wait";
+  label: string;
+  head?: string;
+  base?: string;
+  stage?: Stage;
+  status: StepStatus;
+  detail?: string;
+  pr?: PrSummary;
+  apps?: { uuid: string; name: string; state: "waiting" | "building" | "healthy" | "failed" | "unhealthy"; deploymentUuid?: string }[];
+  startedAt?: string;
+  finishedAt?: string;
+}
+
+export interface ApiShipRun {
+  id: number;
+  repo: string;
+  actor: string;
+  status: "running" | "succeeded" | "failed" | "stopped" | "cancelled";
+  request: ShipRequest;
+  steps: RunStep[];
+  createdAt: string;
+  updatedAt: string;
+  finishedAt: string | null;
+}
+
+export interface RollbackOptions {
+  app: { uuid: string; name: string; stage: Stage };
+  current: string | null;
+  images: { tag: string; createdAt: string; isCurrent: boolean; commitMessage: string | null; deployedAt: string | null }[];
+}
+
+export interface EnvComparison {
+  label: string;
+  apps: Partial<Record<Stage, { uuid: string; name: string }>>;
+  rows: {
+    key: string;
+    present: Partial<Record<Stage, boolean>>;
+    sameStagingProd: boolean;
+    issue: "missing-in-prod" | "missing-in-staging" | "same-secret" | null;
+  }[];
+  counts: { missingInProd: number; missingInStaging: number; sameSecret: number };
+}
+
+export interface Preflight {
+  linked: boolean;
+  envIssues: { app: string; missing: string[]; shared: string[] }[];
+  below: { stage: Stage; apps: number; unhealthy: { name: string; status: string | null; state: string }[] } | null;
+}
 
 /* ---- Coolify (mirrors server/src/services/coolify.ts and server/src/coolify/*) ---- */
 
@@ -212,6 +276,8 @@ export interface ApiCoolifyInstance {
   webhookUrl: string;
   /** Uses a Cloudflare Access service token. */
   cloudflareAccess: boolean;
+  /** Coolify's team webhook: pointing at Oche ("on"), unset ("off"), or used by something else ("other"). */
+  alerts: "on" | "off" | "other" | null;
   /** Apps Oche saw on this Coolify at the last check. */
   appCount: number | null;
   /** Repos in Oche linked to this Coolify. */

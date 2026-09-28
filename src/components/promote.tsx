@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { toast } from "sonner";
 import type { ApiRepo, PromoteResponse, Promotion, RepoStatus } from "../lib/api-types.ts";
-import { usePromote } from "../lib/queries.ts";
+import { AlertTriangle, Loader2 } from "lucide-react";
+import { usePreflight, usePromote } from "../lib/queries.ts";
 import { BranchName, Button, Dialog } from "./ui.tsx";
 
 /** Conflicts and blocks come back as 200s; treat them as failures so the toast reads as one. */
@@ -112,6 +113,17 @@ function ConfirmProd({
 }) {
   const { from, to: target } = promotionRefs(repo, to);
   const direct = to === "prod-direct";
+  const preflight = usePreflight(repo.fullName, "prod", repo.coolifyLinked);
+  const pf = preflight.data;
+  const warnings = pf
+    ? [
+        ...pf.envIssues.flatMap((i) => [
+          ...(i.missing.length ? [`${i.app} in production is missing ${i.missing.slice(0, 4).join(", ")}${i.missing.length > 4 ? "…" : ""}.`] : []),
+          ...(i.shared.length ? [`${i.app} shares ${i.shared.slice(0, 3).join(", ")} with staging.`] : []),
+        ]),
+        ...(!direct && pf.below?.unhealthy.length ? [`Staging isn't healthy: ${pf.below.unhealthy.map((u) => u.name).join(", ")}.`] : []),
+      ]
+    : [];
   return (
     <Dialog
       open
@@ -130,6 +142,23 @@ function ConfirmProd({
         </span>
         <BranchName name={target} stage="prod" />
       </div>
+      {preflight.isLoading && repo.coolifyLinked && (
+        <p className="mt-3 flex items-center gap-2 text-[12.5px] text-muted">
+          <Loader2 className="size-3 animate-spin" /> Checking environment variables and staging…
+        </p>
+      )}
+      {warnings.length > 0 && (
+        <div className="mt-3 rounded-lg bg-staging/12 px-3 py-2.5 text-[12.5px] text-ink-2">
+          <p className="flex items-center gap-1.5 font-medium">
+            <AlertTriangle className="size-3.5 text-staging" /> Before you promote
+          </p>
+          <ul className="mt-1 list-disc space-y-0.5 pl-5">
+            {warnings.map((w) => (
+              <li key={w}>{w}</li>
+            ))}
+          </ul>
+        </div>
+      )}
       {direct && (
         <p className="mt-3 text-[13px] text-muted">
           This skips {repo.branches!.staging}. Afterwards Oche merges {repo.branches!.prod} back into {repo.branches!.staging} so they stay in step.
@@ -140,7 +169,7 @@ function ConfirmProd({
           Cancel
         </Button>
         <Button variant="primary" onClick={onConfirm} autoFocus>
-          {direct ? "Ship to production" : "Promote to production"}
+          {warnings.length ? "Promote anyway" : direct ? "Ship to production" : "Promote to production"}
         </Button>
       </div>
     </Dialog>
