@@ -305,7 +305,10 @@ function Members() {
   };
 
   return (
-    <Section title="People" description="Who can sign in. Members can promote repos they have write access to on GitHub; only you can set repos up or change modes.">
+    <Section
+      title="People"
+      description="Who can sign in. Members see only the repos they can reach on GitHub, and the accounts and orgs those belong to. They can promote and ship where they have write access; only you can set repos up or change settings."
+    >
       <form onSubmit={submit} className="mb-3 flex gap-2">
         <input value={login} onChange={(e) => setLogin(e.target.value)} placeholder="GitHub username" className={inputClass} aria-label="GitHub username" autoComplete="off" spellCheck={false} />
         <Button type="submit" loading={invite.isPending} disabled={!login.trim()}>

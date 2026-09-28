@@ -102,7 +102,9 @@ export function ProjectsPage() {
               )
             }
           >
-            Install Oche on your GitHub account or an org and pick the repos it should look after.
+            {isOwner
+              ? "Install Oche on your GitHub account or an org and pick the repos it should look after."
+              : "You'll see a repo here once you have access to it on GitHub and Oche is installed on its account. Press Refresh after you've been added."}
           </Empty>
         </Card>
       ) : (

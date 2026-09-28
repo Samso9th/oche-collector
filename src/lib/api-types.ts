@@ -164,7 +164,8 @@ export interface ApiEvent {
 }
 
 /** GET /v1/me */
-export type MeResponse = ApiUser;
+/** needsSignIn: a member whose GitHub token is gone, so Oche can't tell what they may see. */
+export type MeResponse = ApiUser & { needsSignIn?: boolean };
 
 /** GET /v1/repos */
 export type ReposResponse = { repos: ApiRepo[] };

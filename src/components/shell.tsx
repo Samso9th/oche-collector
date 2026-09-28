@@ -5,7 +5,7 @@ import clsx from "clsx";
 import { Command } from "cmdk";
 import { Activity, FolderGit2, LogOut, Plus, RefreshCw, Search, Settings } from "lucide-react";
 import { useEffect, useState } from "react";
-import { api } from "../lib/api.ts";
+import { api, loginUrl } from "../lib/api.ts";
 import { useInstallations, useMe, useRefreshRepos, useRepos } from "../lib/queries.ts";
 import { Wordmark } from "./logo.tsx";
 import { Avatar, Kbd, StageDot } from "./ui.tsx";
@@ -67,9 +67,27 @@ export function AppShell() {
         </div>
       </header>
       <main className="mx-auto max-w-6xl px-4 py-6 sm:px-6 sm:py-8">
+        <SignInAgain />
         <Outlet />
       </main>
       {paletteOpen && <Palette onClose={() => setPaletteOpen(false)} />}
+    </div>
+  );
+}
+
+/** A member's GitHub token expired or was revoked, so Oche can't tell which projects they can see. */
+function SignInAgain() {
+  const me = useMe();
+  if (!me.data?.needsSignIn) return null;
+  return (
+    <div className="mb-6 flex flex-wrap items-center gap-3 rounded-xl bg-staging/12 px-4 py-3 text-[13px]">
+      <p className="min-w-0 flex-1">
+        <span className="font-medium">Sign in again to see your projects.</span>{" "}
+        <span className="text-ink-2">Oche checks with GitHub which repos you can reach, and your GitHub sign-in has expired.</span>
+      </p>
+      <a href={loginUrl} className="font-medium text-ink hover:underline">
+        Sign in with GitHub
+      </a>
     </div>
   );
 }
