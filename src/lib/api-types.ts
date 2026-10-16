@@ -330,7 +330,16 @@ export interface DeploymentDetail {
   deployment: ApiDeployment;
   app: { uuid: string; name: string; stage: Stage; fqdn: string | null };
   lines: LogLine[];
+  /** The errors and the tail, hidden lines left out. */
+  excerpt: string[];
   report: string;
+}
+
+/** GET /v1/repos/:owner/:repo/apps/:app/logs?lines=200 — the running container's log. */
+export interface AppLogs {
+  app: { uuid: string; name: string; stage: Stage; fqdn: string | null; state: string; health: string | null };
+  lines: LogLine[];
+  excerpt: string[];
 }
 
 export type BuildPack = "nixpacks" | "dockerfile" | "dockercompose" | "static";
