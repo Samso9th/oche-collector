@@ -58,7 +58,10 @@ export type EventType =
   | "app-stopped"
   | "coolify-setup"
   | "rolled-back"
-  | "settings-changed";
+  | "settings-changed"
+  | "published"
+  | "publish-failed"
+  | "publish-setup";
 
 export interface OcheEvent {
   type: EventType;
@@ -151,6 +154,16 @@ export interface ApiRepo {
   /** Production waits for staging to deploy healthy on Coolify. */
   gateOnStaging: boolean;
   coolifyLinked: boolean;
+  /** npm publishing, when it's set up. */
+  npm: ApiRepoNpm | null;
+}
+
+export interface ApiRepoNpm {
+  packageName: string;
+  enabled: boolean;
+  lastVersion: string | null;
+  /** The last publish run failed. */
+  failing: boolean;
 }
 
 export interface ApiEvent {
@@ -160,6 +173,8 @@ export interface ApiEvent {
   summary: string;
   actor: string | null;
   prNumber: number | null;
+  /** Where to look: the Actions run, the npm page. */
+  url: string | null;
   createdAt: string;
 }
 
@@ -389,7 +404,11 @@ export type InstallationsResponse = {
     repos: number;
     managed: number;
     settingsUrl: string;
+    /** Permissions the app asks for that this installation hasn't accepted yet. */
+    missingPermissions: string[];
   }[];
+  /** Permissions or events the GitHub App itself lacks (owner only). Edit them at appPermissionsUrl. */
+  app: { missingPermissions: string[]; missingEvents: string[]; permissionsUrl: string } | null;
 };
 
 /** GET /v1/members (owner). POST /v1/members { login }. DELETE /v1/members/:login */
@@ -417,3 +436,80 @@ export type TokensResponse = {
   tokens: { id: number; name: string; prefix: string; createdAt: string; lastUsedAt: string | null }[];
 };
 export type CreateTokenResponse = { token: string };
+
+/* ---------- settings ---------- */
+
+/** GET /v1/settings, PATCH /v1/settings (owner). Product defaults stored in the database. */
+export interface AppSettingsValues {
+  "ai.commitModel": string;
+  "ai.debugModel": string;
+  "npm.nodeVersion": string;
+  "npm.registryUrl": string;
+  "npm.registryCacheSeconds": number;
+  "npm.defaultBump": "patch" | "minor";
+}
+export type SettingsResponse = { settings: AppSettingsValues };
+
+/* ---------- npm publishing ---------- */
+
+export type NpmLockfile = "npm" | "pnpm" | "yarn" | "yarn-berry" | "none";
+
+export interface NpmStep {
+  id: "permissions" | "workflow" | "on-prod" | "trust" | "published";
+  label: string;
+  done: boolean;
+  hint?: string;
+}
+
+/** GET /v1/repos/:owner/:repo/npm */
+export interface NpmStatusResponse {
+  detected: {
+    found: boolean;
+    name: string | null;
+    version: string | null;
+    private: boolean;
+    workspaces: boolean;
+    lockfile: NpmLockfile;
+    hasTests: boolean;
+    otherPublishers: string[];
+  };
+  /** Why Oche can't publish this repo, if it can't. */
+  blocked: string | null;
+  registry: { exists: boolean; latest: string | null; publishedAt: string | null; url: string } | null;
+  publishing: {
+    packageName: string;
+    enabled: boolean;
+    runTests: boolean;
+    trustedAt: string | null;
+    trustedBy: string | null;
+    setupPr: { number: number; url: string } | null;
+    lastRun: { url: string; conclusion: string; at: string; failedStep: string | null } | null;
+    lastVersion: string | null;
+    lastPublishedAt: string | null;
+    /** The workflow on the dev branch differs from what Oche would write now. */
+    outdated: boolean;
+  } | null;
+  workflowOnProd: boolean;
+  permissions: { ok: boolean; missing: string[]; fixUrl: string | null };
+  /** The command to run locally so npm trusts the workflow. */
+  trustCommand: string | null;
+  steps: NpmStep[];
+}
+
+/** POST /v1/repos/:owner/:repo/npm  { dryRun?, force? } → the workflow and, unless dry, the PR. */
+export type NpmSetupRequest = { dryRun?: boolean; force?: boolean };
+export interface NpmSetupResponse {
+  workflow: string;
+  path: string;
+  branch: string;
+  pr: { number: number; url: string; merged: boolean } | null;
+}
+
+/** PATCH /v1/repos/:owner/:repo/npm */
+export type NpmUpdateRequest = { enabled?: boolean; runTests?: boolean };
+
+/** POST /v1/repos/:owner/:repo/npm/trust, sent by `oche npm setup` once `npm trust` succeeded. */
+export type NpmTrustRequest = { packageName: string; npmUser: string };
+
+/** DELETE /v1/repos/:owner/:repo/npm?removeWorkflow=1 → the PR that removes the workflow, if asked. */
+export type NpmRemoveResponse = { pr: { number: number; url: string } | null };

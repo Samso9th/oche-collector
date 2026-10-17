@@ -11,7 +11,9 @@ import {
   Ban,
   Clock,
   CornerDownRight,
+  ExternalLink,
   Flag,
+  Package,
   GitBranch,
   GitMerge,
   History,
@@ -44,6 +46,9 @@ const LOOK: Record<EventType, { icon: LucideIcon; tone: string }> = {
   "coolify-setup": { icon: Server, tone: "text-ember" },
   "rolled-back": { icon: History, tone: "text-staging" },
   "settings-changed": { icon: SlidersHorizontal, tone: "text-ink-2" },
+  published: { icon: Package, tone: "text-prod" },
+  "publish-failed": { icon: CircleX, tone: "text-danger" },
+  "publish-setup": { icon: Package, tone: "text-ember" },
 };
 
 function dayLabel(iso: string) {
@@ -130,6 +135,15 @@ function EventRow({ event: e, showRepo, index }: { event: ApiEvent; showRepo: bo
           <time dateTime={e.createdAt} title={fullDate(e.createdAt)}>
             {ago(e.createdAt)}
           </time>
+          {e.url && (
+            <>
+              <span aria-hidden>·</span>
+              <a href={e.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-0.5 hover:text-ink">
+                {/github\.com\/.+\/actions\/runs\//.test(e.url) ? "View run" : /npmjs\.com/.test(e.url) ? "View on npm" : "Open"}
+                <ExternalLink className="size-3" />
+              </a>
+            </>
+          )}
         </p>
       </div>
     </li>

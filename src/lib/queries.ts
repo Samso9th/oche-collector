@@ -28,6 +28,13 @@ import type {
   UpdateRepoRequest,
   UpdateRepoResponse,
   WaitlistResponse,
+  AppSettingsValues,
+  NpmRemoveResponse,
+  NpmSetupRequest,
+  NpmSetupResponse,
+  NpmStatusResponse,
+  NpmUpdateRequest,
+  SettingsResponse,
 } from "./api-types.ts";
 
 export const keys = {
@@ -43,6 +50,8 @@ export const keys = {
   coolify: ["coolify-instances"] as const,
   deployments: (full: string) => ["deployments", full] as const,
   deployment: (full: string, app: string, id: string) => ["deployment", full, app, id] as const,
+  npm: (full: string) => ["npm", full] as const,
+  settings: ["settings"] as const,
 };
 
 export const useSetupStatus = () => useQuery({ queryKey: keys.setup, queryFn: () => api<SetupStatusResponse>("/setup/status"), staleTime: 60_000 });
@@ -393,5 +402,66 @@ export function useRunSetup(full: string) {
       void qc.invalidateQueries({ queryKey: keys.deployments(full) });
       void qc.invalidateQueries({ queryKey: ["events"] });
     },
+  });
+}
+
+/* ---------- npm publishing ---------- */
+
+export const useNpm = (full: string) =>
+  useQuery({
+    queryKey: keys.npm(full),
+    queryFn: () => api<NpmStatusResponse>(`/v1/repos/${full}/npm`),
+    // Quick while a release could land, slow otherwise.
+    refetchInterval: (q) => (q.state.data?.publishing ? 30_000 : 120_000),
+    retry: false,
+  });
+
+function useInvalidateNpm(full: string) {
+  const qc = useQueryClient();
+  const invalidate = useInvalidateRepo();
+  return () => {
+    void qc.invalidateQueries({ queryKey: keys.npm(full) });
+    invalidate(full);
+  };
+}
+
+export function useSetupNpm(full: string) {
+  const invalidate = useInvalidateNpm(full);
+  return useMutation({
+    mutationFn: (body: NpmSetupRequest) => api<NpmSetupResponse>(`/v1/repos/${full}/npm`, { method: "POST", body }),
+    onSuccess: (_d, body) => {
+      if (!body.dryRun) invalidate();
+    },
+  });
+}
+
+export function useUpdateNpm(full: string) {
+  const qc = useQueryClient();
+  const invalidate = useInvalidateNpm(full);
+  return useMutation({
+    mutationFn: (patch: NpmUpdateRequest) => api<NpmStatusResponse>(`/v1/repos/${full}/npm`, { method: "PATCH", body: patch }),
+    onSuccess: (data) => qc.setQueryData(keys.npm(full), data),
+    onSettled: invalidate,
+  });
+}
+
+export function useRemoveNpm(full: string) {
+  const invalidate = useInvalidateNpm(full);
+  return useMutation({
+    mutationFn: (removeWorkflow: boolean) => api<NpmRemoveResponse>(`/v1/repos/${full}/npm?removeWorkflow=${removeWorkflow ? 1 : 0}`, { method: "DELETE" }),
+    onSettled: invalidate,
+  });
+}
+
+/* ---------- product settings (owner) ---------- */
+
+export const useAppSettings = (enabled: boolean) =>
+  useQuery({ queryKey: keys.settings, queryFn: () => api<SettingsResponse>("/v1/settings"), enabled });
+
+export function useUpdateAppSettings() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (patch: Partial<AppSettingsValues>) => api<SettingsResponse>("/v1/settings", { method: "PATCH", body: patch }),
+    onSuccess: (data) => qc.setQueryData(keys.settings, data),
   });
 }

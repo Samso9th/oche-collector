@@ -8,6 +8,7 @@ import { Pipeline } from "../components/pipeline.tsx";
 import { ActiveShip, OpenWorkList, ShipButton } from "../components/ship.tsx";
 import { DeploymentsSection } from "../components/coolify.tsx";
 import { EnvCompare } from "../components/envs.tsx";
+import { NpmSection } from "../components/npm.tsx";
 import { RepoSettings } from "../components/repo-settings.tsx";
 import { BranchName, Button, Card, Empty, Skeleton } from "../components/ui.tsx";
 import type { ApiRepo } from "../lib/api-types.ts";
@@ -93,6 +94,8 @@ export function RepoPage() {
           <DeploymentsSection repo={repo} />
 
           <EnvCompare repo={repo} />
+
+          <NpmSection repo={repo} />
 
           <OpenWorkList repo={repo} status={status} />
 

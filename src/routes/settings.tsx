@@ -1,9 +1,9 @@
-import { Check, Copy, ExternalLink, Plus, Trash2 } from "lucide-react";
-import { useState, type FormEvent, type ReactNode } from "react";
+import { Check, Copy, ExternalLink, Plus, ShieldAlert, Trash2 } from "lucide-react";
+import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { toast } from "sonner";
-import { Avatar, Badge, Button, Card, Dialog, githubAvatar, LinkButton, Skeleton } from "../components/ui.tsx";
+import { Avatar, Badge, Button, Card, Dialog, githubAvatar, LinkButton, Select, Skeleton } from "../components/ui.tsx";
 import { AccessFields, AddCoolifyDialog, CopyButton } from "../components/coolify.tsx";
-import type { ApiCoolifyInstance, ApiWaitlistEntry } from "../lib/api-types.ts";
+import type { ApiCoolifyInstance, AppSettingsValues, ApiWaitlistEntry } from "../lib/api-types.ts";
 import { API_URL } from "../lib/api.ts";
 import { ago } from "../lib/time.ts";
 import {
@@ -23,6 +23,8 @@ import {
   useRemoveMember,
   useTokens,
   useWaitlist,
+  useAppSettings,
+  useUpdateAppSettings,
 } from "../lib/queries.ts";
 
 export function SettingsPage() {
@@ -35,6 +37,7 @@ export function SettingsPage() {
       {isOwner && <CoolifyInstances />}
       {isOwner && <Members />}
       {isOwner && <Waitlist />}
+      {isOwner && <Defaults />}
       <Tokens />
     </div>
   );
@@ -165,6 +168,15 @@ function Accounts() {
         )
       }
     >
+      {q.data?.app && (q.data.app.missingPermissions.length > 0 || q.data.app.missingEvents.length > 0) && (
+        <PermissionNotice
+          title="The Oche GitHub App is missing permissions"
+          detail={[...q.data.app.missingPermissions, ...q.data.app.missingEvents.map((e) => `event: ${e}`)].join(", ")}
+          body="Add them in the app's settings (Permissions & events), then each account below accepts them once. npm publishing needs workflows and actions."
+          href={q.data.app.permissionsUrl}
+          cta="Edit the app"
+        />
+      )}
       <Card className="divide-y divide-line">
         {q.isLoading && <Skeleton className="m-4 h-5 w-1/2" />}
         {q.data?.installations.map((i) => (
@@ -175,13 +187,20 @@ function Accounts() {
                 {i.account}
                 {i.type === "Organization" && <Badge>Org</Badge>}
                 {i.suspended && <Badge tone="danger">Suspended</Badge>}
+                {i.missingPermissions.length > 0 && <Badge tone="warn">New permissions to accept</Badge>}
               </p>
               <p className="text-[12.5px] text-muted">
                 {i.managed} of {i.repos} repo{i.repos === 1 ? "" : "s"} guarded
               </p>
             </div>
-            <a href={i.settingsUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[12.5px] text-muted hover:text-ink">
-              Repo access <ExternalLink className="size-3" />
+            <a
+              href={i.settingsUrl}
+              target="_blank"
+              rel="noreferrer"
+              title={i.missingPermissions.length ? `Missing ${i.missingPermissions.join(", ")}` : undefined}
+              className={i.missingPermissions.length ? "inline-flex items-center gap-1 text-[12.5px] font-medium text-staging hover:underline" : "inline-flex items-center gap-1 text-[12.5px] text-muted hover:text-ink"}
+            >
+              {i.missingPermissions.length ? "Accept permissions" : "Repo access"} <ExternalLink className="size-3" />
             </a>
           </div>
         ))}
@@ -190,6 +209,105 @@ function Accounts() {
         )}
       </Card>
     </Section>
+  );
+}
+
+function PermissionNotice({ title, detail, body, href, cta }: { title: string; detail: string; body: string; href: string; cta: string }) {
+  return (
+    <div className="mb-3 flex flex-wrap items-center gap-3 rounded-xl bg-staging/12 px-4 py-3 text-[13px]">
+      <ShieldAlert className="size-4 shrink-0 text-staging" />
+      <p className="min-w-0 flex-1">
+        <span className="font-medium">{title}:</span> <span className="font-mono text-[12px]">{detail}</span>
+        <span className="block text-[12.5px] text-ink-2">{body}</span>
+      </p>
+      <a href={href} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-medium text-staging hover:underline">
+        {cta} <ExternalLink className="size-3" />
+      </a>
+    </div>
+  );
+}
+
+/* ---------------- defaults (owner only) ---------------- */
+
+const NODE_VERSIONS = ["22", "24", "26"] as const;
+
+function Defaults() {
+  const q = useAppSettings(true);
+  const update = useUpdateAppSettings();
+  const s = q.data?.settings;
+
+  const save = (patch: Partial<AppSettingsValues>) =>
+    update.mutate(patch, {
+      onSuccess: () => toast.success("Saved"),
+      onError: (e) => toast.error("Couldn't save", { description: e.message }),
+    });
+
+  return (
+    <Section title="Defaults" description="How Oche behaves across every repo. Changes apply within a minute, no redeploy.">
+      {!s ? (
+        <Skeleton className="h-40 rounded-xl" />
+      ) : (
+        <Card className="divide-y divide-line">
+          <ModelField label="Commit messages" hint="Writes the message for oche ship and oche commit. Any OpenRouter model." value={s["ai.commitModel"]} onSave={(v) => save({ "ai.commitModel": v })} />
+          <ModelField label="Failure explanations" hint="Explains failed deployments. Worth a stronger model." value={s["ai.debugModel"]} onSave={(v) => save({ "ai.debugModel": v })} />
+          <Row label="npm: Node version" hint="Used by the publish workflow. Repos pick it up when their workflow is updated.">
+            <Select
+              value={NODE_VERSIONS.includes(s["npm.nodeVersion"] as never) ? s["npm.nodeVersion"] : "24"}
+              onChange={(v) => save({ "npm.nodeVersion": v })}
+              aria-label="Node version"
+              options={NODE_VERSIONS.map((v) => ({ value: v, label: `Node ${v}` }))}
+            />
+          </Row>
+          <Row label="npm: commits without a type" hint="The bump when commit messages don't say feat or fix.">
+            <Select
+              value={s["npm.defaultBump"]}
+              onChange={(v) => save({ "npm.defaultBump": v })}
+              aria-label="Default bump"
+              options={[
+                { value: "patch", label: "Patch", hint: "1.2.3 → 1.2.4" },
+                { value: "minor", label: "Minor", hint: "1.2.3 → 1.3.0" },
+              ]}
+            />
+          </Row>
+        </Card>
+      )}
+    </Section>
+  );
+}
+
+function Row({ label, hint, children }: { label: string; hint: string; children: ReactNode }) {
+  return (
+    <div className="grid gap-2 px-4 py-3.5 sm:grid-cols-[1fr_240px] sm:items-center">
+      <div>
+        <p className="text-[13.5px] font-medium">{label}</p>
+        <p className="text-[12.5px] text-muted">{hint}</p>
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function ModelField({ label, hint, value, onSave }: { label: string; hint: string; value: string; onSave: (v: string) => void }) {
+  const [draft, setDraft] = useState(value);
+  useEffect(() => setDraft(value), [value]);
+  const dirty = draft.trim() !== value;
+  return (
+    <Row label={label} hint={hint}>
+      <form
+        className="flex gap-1.5"
+        onSubmit={(e: FormEvent) => {
+          e.preventDefault();
+          if (dirty) onSave(draft.trim());
+        }}
+      >
+        <input value={draft} onChange={(e) => setDraft(e.target.value)} className={`${inputClass} font-mono text-[12.5px]`} spellCheck={false} aria-label={label} />
+        {dirty && (
+          <Button size="md" type="submit">
+            Save
+          </Button>
+        )}
+      </form>
+    </Row>
   );
 }
 

@@ -160,6 +160,8 @@ function GuardedRow({ repo, index }: { repo: ApiRepo; index: number }) {
           </Badge>
         )}
         {waiting > 0 && <Badge tone="warn">{waiting} awaiting review</Badge>}
+        {repo.npm?.failing && <Badge tone="danger">npm publish failed</Badge>}
+        {repo.npm && !repo.npm.failing && repo.npm.lastVersion && <Badge>npm {repo.npm.lastVersion}</Badge>}
       </div>
       <div className="relative z-[1] -ml-1.5 lg:ml-0">
         <PipelineStrip repo={repo} status={status} loading={detail.isLoading} />
