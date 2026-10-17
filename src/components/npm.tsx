@@ -99,6 +99,7 @@ export function NpmSection({ repo }: { repo: ApiRepo }) {
             <p className="mt-0.5 text-[12.5px] text-muted">
               Each push to {repo.branches!.prod} publishes a new version, picked from your commit messages. No npm token is stored anywhere.
               {st.registry && !st.registry.exists && " It isn't on npm yet, so the first version goes up from your machine."}
+              {st.detected.otherPublishers.length > 0 && ` It publishes with ${st.detected.otherPublishers.join(", ")} today; Oche can take that over.`}
             </p>
           </div>
           {isOwner ? (
@@ -206,23 +207,24 @@ function Publishing({ repo, st, canEdit, onUpdate }: { repo: ApiRepo; st: NpmSta
 function SetupDialog({ repo, st, open, onOpenChange }: { repo: ApiRepo; st: NpmStatusResponse; open: boolean; onOpenChange: (o: boolean) => void }) {
   const preview = useSetupNpm(repo.fullName);
   const setup = useSetupNpm(repo.fullName);
-  const [force, setForce] = useState(false);
-  const others = st.publishing ? [] : st.detected.otherPublishers;
+  const others = st.detected.otherPublishers;
+  const [existing, setExisting] = useState<"replace" | "keep">("replace");
   const updating = Boolean(st.publishing);
+  const replacing = others.length > 0 && existing === "replace";
 
   const { mutate: loadPreview, reset: resetPreview } = preview;
   useEffect(() => {
-    if (open) loadPreview({ dryRun: true, force: true });
+    if (open) loadPreview({ dryRun: true, replace: true });
     else {
       resetPreview();
-      setForce(false);
+      setExisting("replace");
     }
   }, [open, loadPreview, resetPreview]);
   const load = onOpenChange;
 
   const submit = () =>
     setup.mutate(
-      { force: force || undefined },
+      others.length ? (replacing ? { replace: true } : { force: true }) : {},
       {
         onSuccess: (res) => {
           onOpenChange(false);
@@ -242,7 +244,7 @@ function SetupDialog({ repo, st, open, onOpenChange }: { repo: ApiRepo; st: NpmS
       onOpenChange={load}
       size="lg"
       title={updating ? "Update the publish workflow" : `Publish ${st.detected.name} to npm`}
-      description={`Oche opens a PR into ${repo.branches!.dev} adding ${preview.data?.path ?? ".github/workflows/oche-publish.yml"}. ${
+      description={`Oche opens a PR into ${repo.branches!.dev} adding ${preview.data?.path ?? ".github/workflows/oche-publish.yml"}${replacing ? ` and removing ${others.join(", ")}` : ""}. ${
         repo.mode === "fast" ? "In fast mode it's merged straight away." : "It waits for reviews like any PR."
       } Publishing starts once it reaches ${repo.branches!.prod}.`}
     >
@@ -253,13 +255,26 @@ function SetupDialog({ repo, st, open, onOpenChange }: { repo: ApiRepo; st: NpmS
       </ul>
 
       {others.length > 0 && (
-        <label className="mt-4 flex items-start gap-2 rounded-lg bg-staging/12 px-3 py-2.5 text-[12.5px]">
-          <input type="checkbox" className="mt-0.5 size-3.5 accent-[var(--ember)]" checked={force} onChange={(e) => setForce(e.target.checked)} />
-          <span>
-            <span className="font-medium">{others.join(", ")} already publishes to npm.</span>
-            <span className="block text-ink-2">Remove it first, or tick this to add Oche's anyway. Two publishers will race each other.</span>
-          </span>
-        </label>
+        <fieldset className="mt-4">
+          <legend className="text-[12.5px] font-medium">
+            This repo already publishes with <span className="font-mono">{others.join(", ")}</span>.
+          </legend>
+          <div className="mt-2 grid gap-2 sm:grid-cols-2">
+            <Choice
+              checked={existing === "replace"}
+              onSelect={() => setExisting("replace")}
+              title="Replace it"
+              badge="Recommended"
+              body={`The same PR deletes ${others.join(", ")}, so only Oche publishes. If npm trusts the old file, \`oche npm setup\` points it at Oche's.`}
+            />
+            <Choice
+              checked={existing === "keep"}
+              onSelect={() => setExisting("keep")}
+              title="Keep both"
+              body="Both workflows stay. They can publish the same release twice and one of them will fail."
+            />
+          </div>
+        </fieldset>
       )}
 
       <div className="mt-4 overflow-hidden rounded-lg bg-surface-2">
@@ -268,7 +283,18 @@ function SetupDialog({ repo, st, open, onOpenChange }: { repo: ApiRepo; st: NpmS
         ) : preview.isError ? (
           <p className="px-3 py-2.5 text-[12.5px] text-danger">{preview.error.message}</p>
         ) : (
-          <pre className="max-h-72 overflow-auto p-3 font-mono text-[11.5px] leading-relaxed text-ink-2">{previewText(preview.data!.workflow)}</pre>
+          <>
+            <div className="border-b border-line px-3 py-2 font-mono text-[11.5px]">
+              <p className="text-prod">+ {preview.data!.path}</p>
+              {replacing &&
+                others.map((name) => (
+                  <p key={name} className="text-danger">
+                    − .github/workflows/{name}
+                  </p>
+                ))}
+            </div>
+            <pre className="max-h-64 overflow-auto p-3 font-mono text-[11.5px] leading-relaxed text-ink-2">{previewText(preview.data!.workflow)}</pre>
+          </>
         )}
       </div>
 
@@ -276,12 +302,31 @@ function SetupDialog({ repo, st, open, onOpenChange }: { repo: ApiRepo; st: NpmS
         <Button variant="ghost" onClick={() => load(false)}>
           Cancel
         </Button>
-        <Button variant="primary" loading={setup.isPending} disabled={!st.permissions.ok || (others.length > 0 && !force)} onClick={submit}>
+        <Button variant="primary" loading={setup.isPending} disabled={!st.permissions.ok} onClick={submit}>
           {updating ? "Open update PR" : "Open PR"}
         </Button>
       </div>
       {!st.permissions.ok && <p className="mt-2 text-right text-[12px] text-muted">Accept the new GitHub App permissions first.</p>}
     </Dialog>
+  );
+}
+
+function Choice({ checked, onSelect, title, badge, body }: { checked: boolean; onSelect: () => void; title: string; badge?: string; body: string }) {
+  return (
+    <label
+      className={clsx(
+        "pressable flex cursor-pointer items-start gap-2.5 rounded-lg px-3 py-2.5 text-[12.5px] shadow-card",
+        checked ? "bg-surface ring-1 ring-ember" : "bg-surface hover:bg-surface-2",
+      )}
+    >
+      <input type="radio" name="existing-publisher" className="mt-0.5 size-3.5 accent-[var(--ember)]" checked={checked} onChange={onSelect} />
+      <span>
+        <span className="flex items-center gap-1.5 font-medium">
+          {title} {badge && <Badge tone="ember">{badge}</Badge>}
+        </span>
+        <span className="mt-0.5 block text-ink-2">{body}</span>
+      </span>
+    </label>
   );
 }
 
