@@ -267,11 +267,14 @@ export interface EnvComparison {
   apps: Partial<Record<Stage, { uuid: string; name: string }>>;
   rows: {
     key: string;
+    /** The key is defined on the stage, whatever it holds. */
     present: Partial<Record<Stage, boolean>>;
+    /** The key is defined and holds something other than whitespace. Absent stages aren't listed. */
+    hasValue: Partial<Record<Stage, boolean>>;
     sameStagingProd: boolean;
-    issue: "missing-in-prod" | "missing-in-staging" | "same-secret" | null;
+    issue: "missing-in-prod" | "missing-in-staging" | "empty-value" | "same-secret" | null;
   }[];
-  counts: { missingInProd: number; missingInStaging: number; sameSecret: number };
+  counts: { missingInProd: number; missingInStaging: number; emptyValue: number; sameSecret: number };
 }
 
 export interface Preflight {

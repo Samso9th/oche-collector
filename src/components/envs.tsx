@@ -9,6 +9,7 @@ const STAGES: Stage[] = ["dev", "staging", "prod"];
 const ISSUE = {
   "missing-in-prod": { label: "Missing in production", tone: "danger" },
   "missing-in-staging": { label: "Missing in staging", tone: "warn" },
+  "empty-value": { label: "Defined but empty", tone: "danger" },
   "same-secret": { label: "Same value as staging", tone: "warn" },
 } as const;
 
@@ -19,10 +20,15 @@ export function EnvCompare({ repo }: { repo: ApiRepo }) {
   if (!repo.coolifyLinked) return null;
 
   const totals = (q.data?.groups ?? []).reduce(
-    (t, g) => ({ prod: t.prod + g.counts.missingInProd, staging: t.staging + g.counts.missingInStaging, same: t.same + g.counts.sameSecret }),
-    { prod: 0, staging: 0, same: 0 },
+    (t, g) => ({
+      prod: t.prod + g.counts.missingInProd,
+      staging: t.staging + g.counts.missingInStaging,
+      empty: t.empty + (g.counts.emptyValue ?? 0),
+      same: t.same + g.counts.sameSecret,
+    }),
+    { prod: 0, staging: 0, empty: 0, same: 0 },
   );
-  const issues = totals.prod + totals.staging + totals.same;
+  const issues = totals.prod + totals.staging + totals.empty + totals.same;
 
   return (
     <Card className="overflow-hidden">
@@ -36,6 +42,7 @@ export function EnvCompare({ repo }: { repo: ApiRepo }) {
           <Badge tone="ok">In step across environments</Badge>
         ) : (
           <span className="flex flex-wrap gap-1.5">
+            {totals.empty > 0 && <Badge tone="danger">{totals.empty} defined but empty</Badge>}
             {totals.prod > 0 && <Badge tone="danger">{totals.prod} missing in production</Badge>}
             {totals.staging > 0 && <Badge tone="warn">{totals.staging} missing in staging</Badge>}
             {totals.same > 0 && <Badge tone="warn">{totals.same} shared with staging</Badge>}
@@ -49,7 +56,8 @@ export function EnvCompare({ repo }: { repo: ApiRepo }) {
             <Group key={g.label} group={g} />
           ))}
           <p className="px-4 py-3 text-[12px] text-muted">
-            Oche compares names and whether values match; it never shows values. Coolify's own variables and preview-only ones are left out. Shared
+            Oche compares names and whether values match; it never shows values. ∅ means the key is there with nothing in it, so the app reads it and
+            gets nothing. Coolify's own variables and preview-only ones are left out. Shared
             variables set on a Coolify environment show as present when an app references them.
           </p>
         </div>
@@ -100,10 +108,15 @@ function Group({ group }: { group: EnvComparison }) {
                     <td key={s} className="px-2 py-1.5">
                       {r.present[s] === undefined ? (
                         <span className="text-muted">·</span>
-                      ) : r.present[s] ? (
-                        <span className="text-prod">✓</span>
-                      ) : (
+                      ) : !r.present[s] ? (
                         <span className="text-danger">✗</span>
+                      ) : r.hasValue?.[s] === false ? (
+                        // Defined and empty, which a tick used to hide: the app reads the key and gets nothing.
+                        <span className="text-danger" title="Defined but empty">
+                          ∅
+                        </span>
+                      ) : (
+                        <span className="text-prod">✓</span>
                       )}
                     </td>
                   ))}
